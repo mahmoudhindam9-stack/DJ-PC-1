@@ -42,7 +42,7 @@
       }
     },
     "icon": [
-      "../public/icon.jpg"
+      "icons/icon.ico"
     ]
   }
 }
