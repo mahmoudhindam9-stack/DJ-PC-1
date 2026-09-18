@@ -28,6 +28,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   isArabic,
   onToggleLanguage,
   themeColors,
+  crossfadeDurationMs,
+  onCrossfadeChange,
 }) => {
   const themeList = Object.keys(THEMES) as AppThemeOption[];
 
