@@ -123,13 +123,19 @@ fn parse_links(html: &str) -> Vec<OnlineLink> {
 }
 
 fn scope_main_content(html: &str) -> String {
-    let document = Html::parse_document(html);
-    if let Ok(h1_selector) = Selector::parse("h1") {
-        if let Some(h1) = document.select(&h1_selector).next() {
-            return h1.html();
-        }
+    let lower = html.to_ascii_lowercase();
+    let start = lower.find("<h1").unwrap_or(0);
+    let footer = lower[start..]
+        .find("<footer")
+        .map(|offset| start + offset)
+        .or_else(|| lower[start..].find("جميع الحقوق محفوظة").map(|offset| start + offset))
+        .unwrap_or(html.len());
+
+    if footer > start {
+        html[start..footer].to_string()
+    } else {
+        html[start..].to_string()
     }
-    html.to_string()
 }
 
 fn extract_audio_url(html: &str) -> Option<String> {
