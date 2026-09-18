@@ -211,7 +211,7 @@ export class AudioEngine {
     }
   }
 
-  async play(): Promise<void> {
+  async play(): Promise<boolean> {
     const ctx = this.ensureAudioContext();
     try {
       if (ctx.state === 'suspended') await ctx.resume();
@@ -219,8 +219,11 @@ export class AudioEngine {
         this.audioElement.load();
       }
       await this.audioElement.play();
+      return true;
     } catch (err) {
-      this.onErrorListeners.forEach((fn) => fn(err instanceof Error ? err.message : String(err)));
+      const message = err instanceof Error ? err.message : String(err);
+      this.onErrorListeners.forEach((fn) => fn(message));
+      return false;
     }
   }
 
