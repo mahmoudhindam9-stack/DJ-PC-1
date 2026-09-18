@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TabType,
   AppThemeOption,
@@ -39,6 +39,19 @@ export const App: React.FC = () => {
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVolume] = useState(0.85);
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('NORMAL');
+  const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(2000);
+
+  const crossfadePendingSongRef = useRef<AudioItem | null>(null);
+  const shuffleBagRef = useRef<string[]>([]);
+  const shuffleSignatureRef = useRef('');
+  const radioRecoveryRef = useRef<{
+    queue: AudioItem[];
+    currentSong: AudioItem | null;
+    currentTimeMs: number;
+    playbackMode: PlaybackMode;
+  } | null>(null);
+  const radioAttemptActiveRef = useRef(false);
+  const radioAttemptTokenRef = useRef(0);
 
   // Radio state
   const [currentRadioStationId, setCurrentRadioStationId] = useState<string | null>(null);
@@ -81,6 +94,20 @@ export const App: React.FC = () => {
 
         const savedLang = await db.getSetting<boolean>('is_arabic', false);
         setIsArabic(savedLang);
+
+        const savedCrossfade = await db.getSetting<number>('crossfade_ms', 2000);
+        const safeCrossfade = Number.isFinite(savedCrossfade)
+          ? Math.max(0, Math.min(15000, savedCrossfade))
+          : 2000;
+        setCrossfadeDurationMs(safeCrossfade);
+        mainAudioEngine.setCrossfadeDuration(safeCrossfade);
+
+        const savedVolume = await db.getSetting<number>('master_volume', 0.85);
+        const safeVolume = Number.isFinite(savedVolume)
+          ? Math.max(0, Math.min(1, savedVolume))
+          : 0.85;
+        setVolume(safeVolume);
+        mainAudioEngine.setVolume(safeVolume);
       } catch (e) {
         console.warn('Storage initial load notice:', e);
       }
@@ -109,12 +136,50 @@ export const App: React.FC = () => {
       handleTrackEnded();
     });
 
+    const unsubCrossfade = mainAudioEngine.onCrossfadeComplete(() => {
+      const pending = crossfadePendingSongRef.current;
+      if (!pending) return;
+      crossfadePendingSongRef.current = null;
+      setCurrentSong(pending);
+      setCurrentRadioStationId(null);
+      setCurrentTimeMs(0);
+      setDurationMs(mainAudioEngine.durationMs);
+    });
+
+    const unsubError = mainAudioEngine.onError((message) => {
+      if (radioAttemptActiveRef.current || !currentRadioStationId) return;
+
+      const snapshot = radioRecoveryRef.current;
+      radioRecoveryRef.current = null;
+      setCurrentRadioStationId(null);
+
+      if (!snapshot?.currentSong) {
+        mainAudioEngine.pause();
+        setIsPlaying(false);
+        return;
+      }
+
+      setQueue(snapshot.queue);
+      setCurrentSong(snapshot.currentSong);
+      setPlaybackMode(snapshot.playbackMode);
+      setCurrentTimeMs(snapshot.currentTimeMs);
+
+      mainAudioEngine.loadTrack(snapshot.currentSong).then(async () => {
+        mainAudioEngine.seekTo(snapshot.currentTimeMs);
+        const restored = await mainAudioEngine.play();
+        if (!restored) setIsPlaying(false);
+      });
+      console.warn('Radio playback failed; restored previous music session:', message);
+    });
+
     return () => {
       unsubTime();
       unsubState();
       unsubEnd();
+      unsubCrossfade();
+      unsubError();
     };
-  }, [queue, currentSong, playbackMode]);
+  }, [currentRadioStationId, handleTrackEnded]);
 
   // Desktop Global Keyboard Shortcuts
   useEffect(() => {
@@ -162,6 +227,28 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [activeTab, isPlaying, currentSong, volume, queue]);
 
+  const getShuffleNextSong = useCallback((currentId: string | null) => {
+    if (queue.length === 0) return null;
+
+    const signature = queue.map((song) => song.id).join('|');
+    if (shuffleSignatureRef.current !== signature) {
+      shuffleSignatureRef.current = signature;
+      shuffleBagRef.current = [];
+    }
+
+    if (shuffleBagRef.current.length === 0) {
+      shuffleBagRef.current = queue
+        .filter((song) => song.id !== currentId)
+        .map((song) => song.id)
+        .sort(() => Math.random() - 0.5);
+    }
+
+    const nextId = shuffleBagRef.current.shift();
+    return queue.find((song) => song.id === nextId)
+      ?? queue.find((song) => song.id !== currentId)
+      ?? queue[0];
+  }, [queue]);
+
   // Track end logic
   const handleTrackEnded = useCallback(() => {
     if (playbackMode === 'REPEAT_ONE' && currentSong) {
@@ -173,25 +260,30 @@ export const App: React.FC = () => {
     if (queue.length === 0) return;
 
     if (playbackMode === 'SHUFFLE') {
-      const randIdx = Math.floor(Math.random() * queue.length);
-      handlePlaySong(queue[randIdx]);
+      const nextSong = getShuffleNextSong(currentSong?.id ?? null);
+      if (nextSong) handlePlaySong(nextSong);
+      else setIsPlaying(false);
       return;
     }
 
     const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
     if (currentIndex >= 0 && currentIndex < queue.length - 1) {
       handlePlaySong(queue[currentIndex + 1]);
-    } else if (playbackMode === 'REPEAT_ALL' && queue.length > 0) {
+    } else if (playbackMode === 'REPEAT_ALL') {
       handlePlaySong(queue[0]);
     } else {
       setIsPlaying(false);
     }
-  }, [queue, currentSong, playbackMode]);
+  }, [queue, currentSong, playbackMode, getShuffleNextSong]);
 
   // Play Song
   const handlePlaySong = (song: AudioItem, customQueue?: AudioItem[]) => {
+    crossfadePendingSongRef.current = null;
+    radioRecoveryRef.current = null;
     if (customQueue && customQueue.length > 0) {
       setQueue(customQueue);
+      shuffleSignatureRef.current = '';
+      shuffleBagRef.current = [];
     }
     setCurrentSong(song);
     setCurrentRadioStationId(null);
@@ -199,6 +291,40 @@ export const App: React.FC = () => {
       mainAudioEngine.play();
     });
   };
+
+  // Real audio crossfade for the main player. The AudioEngine overlaps two media sources.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (currentRadioStationId || playbackMode === 'REPEAT_ONE') return;
+      if (!currentSong || queue.length < 2) return;
+      if (!mainAudioEngine.isPlaying || mainAudioEngine.isCrossfading) return;
+      if (crossfadeDurationMs <= 0) return;
+
+      const duration = mainAudioEngine.durationMs;
+      const current = mainAudioEngine.currentTimeMs;
+      const remaining = duration - current;
+      if (!Number.isFinite(duration) || duration <= 0 || remaining <= 0 || remaining > crossfadeDurationMs) return;
+
+      const currentIndex = queue.findIndex((song) => song.id === currentSong.id);
+      const nextSong = playbackMode === 'SHUFFLE'
+        ? getShuffleNextSong(currentSong.id)
+        : currentIndex >= 0 && currentIndex < queue.length - 1
+          ? queue[currentIndex + 1]
+          : playbackMode === 'REPEAT_ALL'
+            ? queue[0]
+            : null;
+
+      if (!nextSong || nextSong.id === currentSong.id) return;
+
+      crossfadePendingSongRef.current = nextSong;
+      mainAudioEngine.crossfadeTo(nextSong, Math.min(crossfadeDurationMs, remaining)).catch(() => {
+        crossfadePendingSongRef.current = null;
+        handlePlaySong(nextSong);
+      });
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [queue, currentSong, playbackMode, currentRadioStationId, crossfadeDurationMs, getShuffleNextSong]);
 
   // Play / Pause Toggle
   const handlePlayPause = () => {
@@ -220,9 +346,14 @@ export const App: React.FC = () => {
 
   const handleNext = () => {
     if (queue.length === 0) return;
-    const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
-    const nextIndex = (currentIndex + 1) % queue.length;
-    handlePlaySong(queue[nextIndex]);
+    const nextSong = playbackMode === 'SHUFFLE'
+      ? getShuffleNextSong(currentSong?.id ?? null)
+      : (() => {
+          const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
+          if (currentIndex >= 0 && currentIndex < queue.length - 1) return queue[currentIndex + 1];
+          return playbackMode === 'REPEAT_ALL' ? queue[0] : null;
+        })();
+    if (nextSong) handlePlaySong(nextSong);
   };
 
   const handlePrev = () => {
@@ -242,14 +373,25 @@ export const App: React.FC = () => {
   };
 
   const handleVolumeChange = (v: number) => {
-    setVolume(v);
-    mainAudioEngine.setVolume(v);
+    const safe = Math.max(0, Math.min(1, v));
+    setVolume(safe);
+    mainAudioEngine.setVolume(safe);
+    db.setSetting('master_volume', safe).catch(() => {});
+  };
+
+  const handleCrossfadeChange = async (duration: number) => {
+    const safe = Math.max(0, Math.min(15000, Math.round(duration)));
+    setCrossfadeDurationMs(safe);
+    mainAudioEngine.setCrossfadeDuration(safe);
+    await db.setSetting('crossfade_ms', safe);
   };
 
   const handleTogglePlaybackMode = () => {
     const modes: PlaybackMode[] = ['NORMAL', 'REPEAT_ONE', 'REPEAT_ALL', 'SHUFFLE'];
-    const nextIdx = (modes.indexOf(playbackMode) + 1) % modes.length;
-    setPlaybackMode(modes[nextIdx]);
+    const nextMode = modes[(modes.indexOf(playbackMode) + 1) % modes.length];
+    setPlaybackMode(nextMode);
+    shuffleBagRef.current = [];
+    shuffleSignatureRef.current = '';
   };
 
   const handleToggleFavorite = async (song: AudioItem) => {
@@ -315,7 +457,35 @@ export const App: React.FC = () => {
   };
 
   const handleEnqueueSong = (song: AudioItem) => {
+    if (queue.some((item) => item.id === song.id)) return;
     setQueue([...queue, song]);
+    shuffleSignatureRef.current = '';
+    shuffleBagRef.current = [];
+  };
+
+  const handleReorderQueue = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= queue.length || toIndex >= queue.length) return;
+    const updated = [...queue];
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
+    setQueue(updated);
+    shuffleSignatureRef.current = '';
+    shuffleBagRef.current = [];
+  };
+
+  const handleSaveQueueAsPlaylist = async (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName || queue.length === 0) return;
+    const created = await db.createPlaylist(cleanName);
+    for (const song of queue) await db.addSongToPlaylist(created.id, song);
+    setPlaylists(await db.getPlaylists());
+  };
+
+  const handleAddQueueToPlaylist = async (playlistId: string) => {
+    if (!playlistId || queue.length === 0) return;
+    const uniqueQueue = queue.filter((song, index, arr) => arr.findIndex((x) => x.id === song.id) === index);
+    for (const song of uniqueQueue) await db.addSongToPlaylist(playlistId, song);
+    setPlaylists(await db.getPlaylists());
   };
 
   // DJ Deck Routing
@@ -330,25 +500,78 @@ export const App: React.FC = () => {
   };
 
   // Radio
-  const handlePlayRadioStation = (station: RadioStation) => {
+  const handlePlayRadioStation = async (station: RadioStation) => {
     if (currentRadioStationId === station.id && isPlaying) {
+      radioAttemptTokenRef.current++;
+      radioAttemptActiveRef.current = false;
+      radioRecoveryRef.current = null;
       mainAudioEngine.pause();
       setCurrentRadioStationId(null);
       return;
     }
 
-    const item: AudioItem = {
-      id: 'radio_' + station.id,
-      title: station.name,
-      artist: 'Live Radio FM Direct',
-      album: station.tags || 'Broadcasting',
-      duration: 0,
-      uri: station.streamUrls[0] || '',
-      addedDate: Date.now(),
-    };
+    const token = ++radioAttemptTokenRef.current;
+    radioAttemptActiveRef.current = true;
 
+    if (!currentRadioStationId && currentSong) {
+      radioRecoveryRef.current = {
+        queue: [...queue],
+        currentSong,
+        currentTimeMs: mainAudioEngine.currentTimeMs || currentTimeMs,
+        playbackMode,
+      };
+    } else {
+      radioRecoveryRef.current = null;
+    }
+
+    crossfadePendingSongRef.current = null;
     setCurrentRadioStationId(station.id);
-    handlePlaySong(item);
+    mainAudioEngine.pause();
+
+    let success = false;
+    for (const streamUrl of station.streamUrls) {
+      if (radioAttemptTokenRef.current !== token) return;
+
+      const item: AudioItem = {
+        id: 'radio_' + station.id,
+        title: station.name,
+        artist: 'Live Radio FM Direct',
+        album: 'Live Radio',
+        duration: 0,
+        uri: streamUrl,
+        addedDate: Date.now(),
+      };
+
+      setCurrentSong(item);
+      await mainAudioEngine.loadTrack(item);
+      success = await mainAudioEngine.play();
+      if (success) break;
+    }
+
+    radioAttemptActiveRef.current = false;
+    if (radioAttemptTokenRef.current !== token) return;
+
+    if (!success) {
+      const snapshot = radioRecoveryRef.current;
+      radioRecoveryRef.current = null;
+      setCurrentRadioStationId(null);
+
+      if (snapshot?.currentSong) {
+        setQueue(snapshot.queue);
+        setCurrentSong(snapshot.currentSong);
+        setPlaybackMode(snapshot.playbackMode);
+        setCurrentTimeMs(snapshot.currentTimeMs);
+        await mainAudioEngine.loadTrack(snapshot.currentSong);
+        mainAudioEngine.seekTo(snapshot.currentTimeMs);
+        await mainAudioEngine.play();
+      } else {
+        mainAudioEngine.pause();
+        setCurrentSong(null);
+        setIsPlaying(false);
+      }
+    } else {
+      radioRecoveryRef.current = null;
+    }
   };
 
   // Theme & Language
@@ -456,12 +679,14 @@ export const App: React.FC = () => {
 
         {activeTab === 'SETTINGS' && (
           <SettingsScreen
-            currentTheme={currentTheme}
-            onThemeChange={handleThemeChange}
-            isArabic={isArabic}
-            onToggleLanguage={handleToggleLanguage}
-            themeColors={themeColors}
-          />
+          currentTheme={currentTheme}
+          onThemeChange={handleThemeChange}
+          isArabic={isArabic}
+          onToggleLanguage={handleToggleLanguage}
+          themeColors={themeColors}
+          crossfadeDurationMs={crossfadeDurationMs}
+          onCrossfadeChange={handleCrossfadeChange}
+        />
         )}
       </main>
 
@@ -526,15 +751,23 @@ export const App: React.FC = () => {
           themeColors={themeColors}
           isArabic={isArabic}
           onClose={() => setShowQueue(false)}
-          onSelectSong={(s) => handlePlaySong(s)}
+          onSelectSong={(song) => handlePlaySong(song)}
           onRemoveFromQueue={(idx) => {
             const updated = [...queue];
             updated.splice(idx, 1);
             setQueue(updated);
+            shuffleSignatureRef.current = '';
+            shuffleBagRef.current = [];
           }}
-          onClearQueue={() => setQueue([])}
+          onClearQueue={() => {
+            setQueue([]);
+            shuffleSignatureRef.current = '';
+            shuffleBagRef.current = [];
+          }}
+          onMoveItem={handleReorderQueue}
           playlists={playlists}
-          onAddToPlaylist={handleAddSongToPlaylist}
+          onSaveAsPlaylist={handleSaveQueueAsPlaylist}
+          onAddQueueToPlaylist={handleAddQueueToPlaylist}
         />
       )}
     </div>
