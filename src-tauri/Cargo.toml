@@ -1,6 +1,6 @@
 [package]
 name = "dj-desktop"
-version = "3.6.7"
+version = "3.6.8"
 description = "DJ Desktop - Advanced DJ Mixer, Music Player, Equalizer & Karaoke Studio"
 authors = ["DJ Desktop Team"]
 edition = "2021"
@@ -19,3 +19,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+scraper = "0.22"
+regex = "1"
+url = "2"

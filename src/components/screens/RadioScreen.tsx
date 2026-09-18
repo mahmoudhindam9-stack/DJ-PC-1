@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { RadioStation, AudioItem, ThemeColors } from '../../types';
 import { radioService, EGYPT_QURAN_STATION } from '../../services/RadioService';
+import { db } from '../../storage/db';
 
 interface RadioScreenProps {
   themeColors: ThemeColors;
@@ -42,36 +43,60 @@ export const RadioScreen: React.FC<RadioScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
-  // Fetch stations when tab or query changes
+  // Fetch stations and persist favorites exactly like the mobile app.
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
 
-    const country = activeTab === 'EG' ? 'EG' : null;
-    radioService.getStations(country, searchQuery).then((res) => {
-      if (isMounted) {
-        setStations(res);
-        setIsLoading(false);
-      }
-    });
+    const load = async () => {
+      try {
+        if (activeTab === 'FAVORITES') {
+          const favorites = await db.getRadioFavorites();
+          if (isMounted) {
+            setStations(favorites);
+            setFavoriteIds(new Set(favorites.map((station) => station.id)));
+          }
+          return;
+        }
 
+        const country = activeTab === 'EG' ? 'EG' : null;
+        const res = await radioService.getStations(country, searchQuery);
+        const favorites = await db.getRadioFavorites();
+        if (isMounted) {
+          setStations(res);
+          setFavoriteIds(new Set(favorites.map((station) => station.id)));
+        }
+      } catch (error) {
+        console.warn('Radio station loading notice:', error);
+        if (isMounted) setStations([]);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    void load();
     return () => {
       isMounted = false;
     };
   }, [activeTab, searchQuery]);
 
-  const toggleFavorite = (stationId: string) => {
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(stationId)) next.delete(stationId);
-      else next.add(stationId);
-      return next;
-    });
+  const toggleFavorite = async (station: RadioStation) => {
+    try {
+      const isFavorite = await db.toggleRadioFavorite(station);
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (isFavorite) next.add(station.id);
+        else next.delete(station.id);
+        return next;
+      });
+    } catch (error) {
+      console.warn('Radio favorite update notice:', error);
+    }
   };
 
   const displayedStations =
     activeTab === 'FAVORITES'
-      ? stations.filter((s) => favoriteIds.has(s.id))
+      ? stations
       : stations;
 
   const stationToAudioItem = (station: RadioStation): AudioItem => ({
@@ -224,7 +249,7 @@ export const RadioScreen: React.FC<RadioScreenProps> = ({
                       </div>
 
                       <button
-                        onClick={() => toggleFavorite(st.id)}
+                        onClick={() => { void toggleFavorite(st); }}
                         className="p-1.5 rounded-full hover:bg-white/10"
                         title="Favorite"
                       >
