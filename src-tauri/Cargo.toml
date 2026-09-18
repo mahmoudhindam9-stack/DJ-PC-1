@@ -1,6 +1,6 @@
 [package]
 name = "dj-desktop"
-version = "3.6.7"
+version = "3.6.8"
 description = "DJ Desktop - Advanced DJ Mixer, Music Player, Equalizer & Karaoke Studio"
 authors = ["DJ Desktop Team"]
 edition = "2021"
