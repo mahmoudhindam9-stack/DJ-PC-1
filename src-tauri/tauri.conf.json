@@ -48,7 +48,7 @@
       "nsis": {
         "installMode": "currentUser",
         "startMenuFolder": "DJ Desktop",
-        "installerHooks": "../windows/hooks.nsh",
+        "installerHooks": "windows/hooks.nsh",
         "compression": "lzma"
       }
     }
