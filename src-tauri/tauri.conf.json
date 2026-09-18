@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DJ Desktop",
-  "version": "3.6.7",
+  "version": "3.6.8",
   "identifier": "com.djdesktop.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -30,9 +30,19 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "DJ Desktop",
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    },
     "icon": [
-      "../public/icon.jpg"
+      "icons/icon.ico"
     ]
   }
 }

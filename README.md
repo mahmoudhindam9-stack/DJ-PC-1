@@ -1,22 +1,38 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# DJ Desktop
 
-# Run and deploy your AI Studio app
+Lightweight Windows desktop application built with React, TypeScript, Vite, and Tauri 2.
 
-This contains everything you need to run your app locally.
+## Windows distribution
 
-View your app in AI Studio: https://ai.studio/apps/7689b14e-3e50-4a26-a6e5-235c3db06254
+The release ZIP contains exactly two files:
 
-## Run Locally
+- Install.exe — installs DJ Desktop for the current Windows user, creates the Desktop and Start Menu shortcuts, then launches the application.
+- Uninstall.exe — stops DJ Desktop and removes the installed application, application-specific configuration, WebView2 data, saved settings, library/playlists data, cache, and Desktop/Start Menu shortcuts.
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+The Tauri NSIS bundle is configured for current-user installation, so the normal installer does not require Administrator privileges. Tauri documents current-user NSIS as the default installation mode. citeturn659165search0turn659165search1
 
+The Windows installer uses the WebView2 download bootstrapper rather than embedding a fixed WebView2 runtime, keeping the package smaller on PCs that already have WebView2. citeturn855709search8
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
-7. If you have already published your app in AI Studio, please [request upload key reset](https://support.google.com/googleplay/android-developer/answer/9842756#zippy=%2Crequest-an-upload-key-reset) in Google Play Console.
+## Local development
+
+Prerequisites:
+- Node.js 22+
+- Rust stable
+- NSIS
+
+Install JavaScript dependencies without creating package-lock.json:
+
+`npm install --no-package-lock`
+
+Run the web UI:
+
+`npm run dev`
+
+Build the Windows installer:
+
+`npm run tauri -- build --bundles nsis`
+
+## CI release package
+
+`.github/workflows/windows-release.yml` builds the x64 Windows NSIS installer, compiles the standalone `Uninstall.exe`, verifies that the distribution directory contains only `Install.exe` and `Uninstall.exe`, creates `DJ Desktop-vX.Y.Z-Windows.zip`, and publishes the ZIP as the GitHub Release asset.
+
