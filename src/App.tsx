@@ -22,66 +22,18 @@ import { KaraokeScreen } from './components/screens/KaraokeScreen';
 import { RadioScreen } from './components/screens/RadioScreen';
 import { OnlineMusicScreen } from './components/screens/OnlineMusicScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
-
-// Factory initial tracks so user has immediate playable audio
-const INITIAL_DEMO_TRACKS: AudioItem[] = [
-  {
-    id: 'demo_1',
-    title: 'Hype Air Horn Anthem',
-    artist: 'DJ Desktop Studio',
-    album: 'DJ Sound FX Rack',
-    duration: 3500,
-    uri: '/factory_fx/hype air horn.mp3',
-    addedDate: Date.now() - 100000,
-  },
-  {
-    id: 'demo_2',
-    title: 'Cyberpunk Electro Groove',
-    artist: 'Audius Synth Beats',
-    album: 'Neon Nights',
-    duration: 145000,
-    uri: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=cyberpunk-2099-10701.mp3',
-    addedDate: Date.now() - 90000,
-  },
-  {
-    id: 'demo_3',
-    title: 'Club House DJ Beat',
-    artist: 'DJ Pulse Masters',
-    album: 'Dancefloor 2026',
-    duration: 120000,
-    uri: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0a13f69d2.mp3?filename=action-stylish-rock-10023.mp3',
-    addedDate: Date.now() - 80000,
-  },
-  {
-    id: 'demo_4',
-    title: 'Arabic Chill Oud Lounge',
-    artist: 'Oriental Beats Collection',
-    album: 'Cairo Nights',
-    duration: 180000,
-    uri: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8a73467.mp3?filename=arabic-oriental-lounge-19818.mp3',
-    addedDate: Date.now() - 70000,
-  },
-  {
-    id: 'demo_5',
-    title: 'Winning Jingle & Cash Flow',
-    artist: 'DJ Sound FX',
-    album: 'DJ Soundboard Vol. 1',
-    duration: 4200,
-    uri: '/factory_fx/winning jingle.mp3',
-    addedDate: Date.now() - 60000,
-  },
-];
+import { batchImportAudioFiles } from './utils/fileImporter';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('LIBRARY');
   const [currentTheme, setCurrentTheme] = useState<AppThemeOption>('DJ_BLUE');
   const [isArabic, setIsArabic] = useState(false);
 
-  // Music State
-  const [library, setLibrary] = useState<AudioItem[]>(INITIAL_DEMO_TRACKS);
+  // Music State - Clean initial state without default songs
+  const [library, setLibrary] = useState<AudioItem[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [queue, setQueue] = useState<AudioItem[]>(INITIAL_DEMO_TRACKS);
-  const [currentSong, setCurrentSong] = useState<AudioItem | null>(INITIAL_DEMO_TRACKS[1]);
+  const [queue, setQueue] = useState<AudioItem[]>([]);
+  const [currentSong, setCurrentSong] = useState<AudioItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
@@ -102,13 +54,23 @@ export const App: React.FC = () => {
     async function loadData() {
       try {
         const savedSongs = await db.getAllSongs();
+        const cleanSongs: AudioItem[] = [];
+
+        // Purge any legacy demo tracks from storage
         if (savedSongs && savedSongs.length > 0) {
-          setLibrary(savedSongs);
-          setQueue(savedSongs);
-          setCurrentSong(savedSongs[0]);
-        } else {
-          // seed initial tracks into DB
-          await db.addSongs(INITIAL_DEMO_TRACKS);
+          for (const s of savedSongs) {
+            if (s.id.startsWith('demo_')) {
+              await db.deleteSong(s.id);
+            } else {
+              cleanSongs.push(s);
+            }
+          }
+        }
+
+        setLibrary(cleanSongs);
+        setQueue(cleanSongs);
+        if (cleanSongs.length > 0) {
+          setCurrentSong(cleanSongs[0]);
         }
 
         const savedPls = await db.getPlaylists();
@@ -311,30 +273,28 @@ export const App: React.FC = () => {
   };
 
   const handleImportFiles = async (files: FileList | File[]) => {
-    const newItems: AudioItem[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const url = URL.createObjectURL(file);
-      const cleanName = file.name.replace(/\.[^/.]+$/, '');
-      const item: AudioItem = {
-        id: 'local_' + Date.now() + '_' + i,
-        title: cleanName,
-        artist: 'Local File',
-        album: 'Local Storage',
-        duration: 0,
-        uri: url,
-        addedDate: Date.now(),
-      };
-      newItems.push(item);
-    }
+    try {
+      const newItems = await batchImportAudioFiles(files);
+      if (newItems.length === 0) return;
 
-    await db.addSongs(newItems);
-    const merged = [...newItems, ...library];
-    setLibrary(merged);
-    setQueue([...newItems, ...queue]);
-    if (!currentSong && newItems.length > 0) {
-      handlePlaySong(newItems[0]);
+      await db.addSongs(newItems);
+      const merged = [...newItems, ...library];
+      setLibrary(merged);
+      setQueue([...newItems, ...queue]);
+      if (!currentSong && newItems.length > 0) {
+        handlePlaySong(newItems[0]);
+      }
+    } catch (err) {
+      console.warn('Importing audio files notice:', err);
     }
+  };
+
+  const handleClearLibrary = async () => {
+    await db.clearAllSongs();
+    setLibrary([]);
+    setQueue([]);
+    setCurrentSong(null);
+    mainAudioEngine.pause();
   };
 
   // Playlists
@@ -436,7 +396,9 @@ export const App: React.FC = () => {
             onPlaySong={handlePlaySong}
             onToggleFavorite={handleToggleFavorite}
             onDeleteSong={handleDeleteSong}
+            onClearLibrary={handleClearLibrary}
             onImportFiles={handleImportFiles}
+            onNavigateToOnline={() => setActiveTab('ONLINE_MUSIC')}
             onCreatePlaylist={handleCreatePlaylist}
             onDeletePlaylist={handleDeletePlaylist}
             onAddSongToPlaylist={handleAddSongToPlaylist}

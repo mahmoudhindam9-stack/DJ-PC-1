@@ -11,10 +11,13 @@ import {
   Check,
   FolderOpen,
   X,
+  FolderPlus,
+  FileAudio,
 } from 'lucide-react';
 import { AudioItem, ThemeColors, SamplePad } from '../../types';
 import { deckAEngine, deckBEngine, DJEffectType } from '../../audio/DJDeckEngine';
 import { samplerEngine } from '../../audio/SamplerEngine';
+import { AUDIO_INPUT_ACCEPT } from '../../utils/fileImporter';
 
 interface DJMixerScreenProps {
   library: AudioItem[];
@@ -716,10 +719,12 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
 
             <div className="flex-1 overflow-y-auto p-3 space-y-1">
               {library.length === 0 ? (
-                <div className="py-12 text-center text-xs opacity-70">
-                  {isArabic
-                    ? 'المكتبة فارغة. قم باستيراد ملفات صوتية أولاً.'
-                    : 'Library is empty. Import audio files first.'}
+                <div className="py-8 text-center text-xs opacity-70 space-y-3">
+                  <p>
+                    {isArabic
+                      ? 'المكتبة فارغة. قم باختيار أغانٍ أو مجلد كامل مباشرة:'
+                      : 'Library is empty. Import songs or a music folder directly:'}
+                  </p>
                 </div>
               ) : (
                 library.map((track) => (
@@ -742,6 +747,55 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
                   </div>
                 ))
               )}
+            </div>
+
+            {/* Modal Footer with Direct Song and Folder Import */}
+            <div className="p-3 border-t flex items-center justify-between gap-2" style={{ borderColor: themeColors.border }}>
+              <label
+                className="flex-1 py-2 px-3 rounded-xl text-xs font-semibold cursor-pointer border flex items-center justify-center gap-1.5 hover:bg-white/5 transition-all text-center"
+                style={{
+                  backgroundColor: themeColors.surfaceVariant,
+                  borderColor: themeColors.border,
+                }}
+              >
+                <FileAudio className="w-3.5 h-3.5" />
+                <span>{isArabic ? 'اختيار أغاني' : 'Select Songs'}</span>
+                <input
+                  type="file"
+                  multiple
+                  accept={AUDIO_INPUT_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      onImportFiles(e.target.files);
+                    }
+                  }}
+                />
+              </label>
+
+              <label
+                className="flex-1 py-2 px-3 rounded-xl text-xs font-semibold cursor-pointer border flex items-center justify-center gap-1.5 hover:bg-white/5 transition-all text-center"
+                style={{
+                  backgroundColor: themeColors.surfaceVariant,
+                  borderColor: themeColors.border,
+                }}
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                <span>{isArabic ? 'اختيار مجلد' : 'Select Folder'}</span>
+                <input
+                  type="file"
+                  multiple
+                  // @ts-expect-error - webkitdirectory
+                  webkitdirectory=""
+                  directory=""
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      onImportFiles(e.target.files);
+                    }
+                  }}
+                />
+              </label>
             </div>
           </div>
         </div>

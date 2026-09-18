@@ -95,6 +95,17 @@ class StorageDB {
     });
   }
 
+  async clearAllSongs(): Promise<void> {
+    const db = await this.dbPromise;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('songs', 'readwrite');
+      const store = tx.objectStore('songs');
+      const req = store.clear();
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   async toggleFavorite(id: string): Promise<boolean> {
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {

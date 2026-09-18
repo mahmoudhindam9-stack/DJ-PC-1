@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Search,
   Plus,
@@ -13,9 +13,17 @@ import {
   Clock,
   User,
   Disc3,
-  Folder,
+  FolderPlus,
+  FileAudio,
+  Globe,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { AudioItem, Playlist, LibrarySubTab, ThemeColors } from '../../types';
+import {
+  AUDIO_INPUT_ACCEPT,
+  extractFilesFromDataTransfer,
+} from '../../utils/fileImporter';
 
 interface LibraryScreenProps {
   library: AudioItem[];
@@ -27,7 +35,9 @@ interface LibraryScreenProps {
   onPlaySong: (song: AudioItem, queue?: AudioItem[]) => void;
   onToggleFavorite: (song: AudioItem) => void;
   onDeleteSong: (id: string) => void;
+  onClearLibrary?: () => void;
   onImportFiles: (files: FileList | File[]) => void;
+  onNavigateToOnline?: () => void;
   onCreatePlaylist: (name: string) => void;
   onDeletePlaylist: (id: string) => void;
   onAddSongToPlaylist: (playlistId: string, song: AudioItem) => void;
@@ -46,7 +56,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   onPlaySong,
   onToggleFavorite,
   onDeleteSong,
+  onClearLibrary,
   onImportFiles,
+  onNavigateToOnline,
   onCreatePlaylist,
   onDeletePlaylist,
   onAddSongToPlaylist,
@@ -61,6 +73,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   const [showNewPlaylistModal, setShowNewPlaylistModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
+
+  const songFileInputRef = useRef<HTMLInputElement>(null);
+  const folderFileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter & Sort Logic
   const filteredSongs = useMemo(() => {
@@ -116,16 +134,43 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
     return groups;
   }, [library]);
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onImportFiles(e.target.files);
+      setIsImporting(true);
+      try {
+        await onImportFiles(e.target.files);
+      } finally {
+        setIsImporting(false);
+        if (e.target) e.target.value = '';
+      }
     }
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleFolderInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIsImporting(true);
+      try {
+        await onImportFiles(e.target.files);
+      } finally {
+        setIsImporting(false);
+        if (e.target) e.target.value = '';
+      }
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onImportFiles(e.dataTransfer.files);
+    setIsDraggingOver(false);
+    setIsImporting(true);
+    try {
+      const extracted = await extractFilesFromDataTransfer(e.dataTransfer);
+      if (extracted.length > 0) {
+        await onImportFiles(extracted);
+      }
+    } catch (err) {
+      console.warn('Drop import error:', err);
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -140,15 +185,41 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   return (
     <div
       id="library-screen-container"
-      className="flex-1 flex flex-col h-full overflow-hidden select-none p-4"
-      onDragOver={(e) => e.preventDefault()}
+      className={`flex-1 flex flex-col h-full overflow-hidden select-none p-4 relative transition-colors ${
+        isDraggingOver ? 'ring-4 ring-inset ring-blue-500/40' : ''
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDraggingOver(true);
+      }}
+      onDragLeave={() => setIsDraggingOver(false)}
       onDrop={handleDrop}
       style={{
         backgroundColor: themeColors.background,
         color: themeColors.textPrimary,
       }}
     >
-      {/* Top Header & Search Bar */}
+      {/* Hidden file inputs: One for individual songs, one for full folders */}
+      <input
+        type="file"
+        ref={songFileInputRef}
+        multiple
+        accept={AUDIO_INPUT_ACCEPT}
+        className="hidden"
+        onChange={handleFileInput}
+      />
+      <input
+        type="file"
+        ref={folderFileInputRef}
+        multiple
+        // @ts-expect-error - webkitdirectory is standard in WebKit/Blink/Gecko browsers
+        webkitdirectory=""
+        directory=""
+        className="hidden"
+        onChange={handleFolderInput}
+      />
+
+      {/* Top Header & Import Action Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <Music className="w-6 h-6" style={{ color: themeColors.primary }} />
@@ -157,34 +228,52 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               {isArabic ? 'مكتبة الموسيقى' : 'MUSIC LIBRARY'}
             </h1>
             <p className="text-xs" style={{ color: themeColors.textMuted }}>
-              {library.length} {isArabic ? 'ملف صوتي محلي' : 'audio track(s) loaded'}
+              {library.length} {isArabic ? 'أغنية محملة' : 'audio track(s) loaded'}
             </p>
           </div>
         </div>
 
-        {/* Action buttons: Import, Add Playlist */}
+        {/* Action buttons: Select Songs, Select Folder, Clear, New Playlist */}
         <div className="flex items-center gap-2">
-          <label
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shadow-sm flex items-center gap-1.5 transition-all hover:opacity-90"
+          {/* Button 1: Select Songs */}
+          <button
+            onClick={() => songFileInputRef.current?.click()}
+            disabled={isImporting}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shadow-sm flex items-center gap-1.5 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
             style={{
               backgroundColor: themeColors.primary,
               color: '#ffffff',
             }}
+            title={isArabic ? 'اختيار أغاني من الجهاز' : 'Select individual audio files'}
           >
-            <FolderOpen className="w-4 h-4" />
-            <span>{isArabic ? 'استيراد ملفات صوتية' : 'Import Audio Files'}</span>
-            <input
-              type="file"
-              multiple
-              accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a"
-              className="hidden"
-              onChange={handleFileInput}
-            />
-          </label>
+            {isImporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileAudio className="w-4 h-4" />
+            )}
+            <span>{isArabic ? 'اختيار أغاني' : 'Select Songs'}</span>
+          </button>
 
+          {/* Button 2: Select Music Folder */}
+          <button
+            onClick={() => folderFileInputRef.current?.click()}
+            disabled={isImporting}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shadow-sm flex items-center gap-1.5 transition-all hover:opacity-90 active:scale-95 border disabled:opacity-50"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+              color: themeColors.textPrimary,
+            }}
+            title={isArabic ? 'اختيار مجلد موسيقى كامل واستيراد جميع الأغاني بداخله' : 'Select and import an entire folder of music'}
+          >
+            <FolderPlus className="w-4 h-4 text-amber-400" />
+            <span>{isArabic ? 'اختيار مجلد' : 'Select Folder'}</span>
+          </button>
+
+          {/* New Playlist Button */}
           <button
             onClick={() => setShowNewPlaylistModal(true)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 hover:bg-white/5 transition-all"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 hover:bg-white/5 transition-all active:scale-95"
             style={{
               borderColor: themeColors.border,
               backgroundColor: themeColors.surfaceVariant,
@@ -193,6 +282,22 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
             <Plus className="w-4 h-4" />
             <span>{isArabic ? 'قائمة جديدة' : 'New Playlist'}</span>
           </button>
+
+          {/* Clear Library Button (only if library has items) */}
+          {library.length > 0 && onClearLibrary && (
+            <button
+              onClick={() => setShowConfirmClear(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1 opacity-70 hover:opacity-100 hover:text-red-400 transition-all"
+              style={{
+                borderColor: themeColors.border,
+                backgroundColor: themeColors.surfaceVariant,
+              }}
+              title={isArabic ? 'مسح جميع الأغاني من المكتبة' : 'Clear all songs from library'}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isArabic ? 'مسح الكل' : 'Clear All'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -266,7 +371,83 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
       {/* Main SubTab Content */}
       <div className="flex-1 overflow-y-auto pr-1">
-        {activeSubTab === 'PLAYLISTS' ? (
+        {/* If Library is Empty: Friendly Hero Empty State with Song/Folder buttons */}
+        {library.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div
+              className="w-20 h-20 rounded-3xl border flex items-center justify-center mb-5 shadow-lg"
+              style={{
+                backgroundColor: themeColors.surface,
+                borderColor: themeColors.border,
+              }}
+            >
+              <Music className="w-10 h-10" style={{ color: themeColors.primary }} />
+            </div>
+
+            <h2 className="text-lg font-black mb-2">
+              {isArabic ? 'مكتبتك الموسيقية فارغة' : 'Your Music Library is Empty'}
+            </h2>
+            <p className="text-xs max-w-md opacity-70 mb-6 leading-relaxed">
+              {isArabic
+                ? 'ابدأ بإضافة الأغاني من جهازك عبر اختيار ملفات صوتية محددة أو استيراد مجلد كامل. يمكنك أيضاً سحب وإفلات أي ملفات أو مجلدات مباشرة هنا.'
+                : 'Get started by selecting individual audio files or choosing a full music folder from your computer. You can also drag & drop files and folders anywhere.'}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {/* Select Songs */}
+              <button
+                onClick={() => songFileInputRef.current?.click()}
+                disabled={isImporting}
+                className="px-5 py-2.5 rounded-xl font-bold text-xs shadow-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all"
+                style={{
+                  backgroundColor: themeColors.primary,
+                  color: '#ffffff',
+                }}
+              >
+                <FileAudio className="w-4 h-4" />
+                <span>{isArabic ? 'اختيار ملفات أغاني' : 'Select Audio Files'}</span>
+              </button>
+
+              {/* Select Folder */}
+              <button
+                onClick={() => folderFileInputRef.current?.click()}
+                disabled={isImporting}
+                className="px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 border hover:bg-white/5 active:scale-95 transition-all"
+                style={{
+                  backgroundColor: themeColors.surface,
+                  borderColor: themeColors.border,
+                  color: themeColors.textPrimary,
+                }}
+              >
+                <FolderPlus className="w-4 h-4 text-amber-400" />
+                <span>{isArabic ? 'اختيار مجلد موسيقى' : 'Select Music Folder'}</span>
+              </button>
+
+              {/* Online Arabic Music Shortcut */}
+              {onNavigateToOnline && (
+                <button
+                  onClick={onNavigateToOnline}
+                  className="px-4 py-2.5 rounded-xl font-semibold text-xs border flex items-center gap-2 opacity-80 hover:opacity-100 hover:bg-white/5 transition-all"
+                  style={{
+                    backgroundColor: themeColors.surfaceVariant,
+                    borderColor: themeColors.border,
+                  }}
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>{isArabic ? 'تصفح القسم العربي أونلاين' : 'Browse Arabic Online Music'}</span>
+                </button>
+              )}
+            </div>
+
+            <div
+              className="mt-8 border-2 border-dashed rounded-2xl py-6 px-10 max-w-sm w-full text-xs opacity-50 flex items-center justify-center gap-2"
+              style={{ borderColor: themeColors.border }}
+            >
+              <FolderOpen className="w-4 h-4" />
+              <span>{isArabic ? 'أو اسحب وأفلت الملفات والمجلدات هنا' : 'Or drag & drop audio files & folders here'}</span>
+            </div>
+          </div>
+        ) : activeSubTab === 'PLAYLISTS' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {playlists.length === 0 ? (
               <div className="col-span-full py-16 text-center text-sm" style={{ color: themeColors.textMuted }}>
@@ -328,7 +509,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 <div className="flex items-center gap-2 mb-2">
                   <User className="w-4 h-4" style={{ color: themeColors.primary }} />
                   <h3 className="font-bold text-sm">{artist}</h3>
-                  <span className="text-xs opacity-60">({artistGroups[artist].length} tracks)</span>
+                  <span className="text-xs opacity-60">({artistGroups[artist].length} {isArabic ? 'أغنية' : 'tracks'})</span>
                 </div>
                 <div className="space-y-1">
                   {artistGroups[artist].map((song) => (
@@ -338,7 +519,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 cursor-pointer text-xs"
                     >
                       <span className="truncate">{song.title}</span>
-                      <span className="opacity-60">{formatMs(song.duration)}</span>
+                      <span className="opacity-60 font-mono">{formatMs(song.duration)}</span>
                     </div>
                   ))}
                 </div>
@@ -365,7 +546,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 </p>
                 <button
                   onClick={() => onPlaySong(albumGroups[album][0], albumGroups[album])}
-                  className="w-full py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-sm"
+                  className="w-full py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-sm active:scale-95"
                   style={{
                     backgroundColor: themeColors.primary,
                     color: '#ffffff',
@@ -385,8 +566,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 <Music className="w-12 h-12 opacity-30" />
                 <p className="text-sm" style={{ color: themeColors.textMuted }}>
                   {isArabic
-                    ? 'لم يتم العثور على أغانٍ. اسحب وأفلت الملفات الصوتية هنا أو انقر فوق استيراد.'
-                    : 'No tracks found. Drag & drop audio files here or click "Import Audio Files".'}
+                    ? 'لم يتم العثور على أغانٍ تطابق بحثك.'
+                    : 'No tracks found matching your search.'}
                 </p>
               </div>
             ) : (
@@ -409,7 +590,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       onClick={() => onPlaySong(song, filteredSongs)}
                     >
                       <button
-                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform active:scale-90 shrink-0"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform active:scale-90 shrink-0 font-bold"
                         style={{
                           backgroundColor: isCurrent && isPlaying ? themeColors.primary : themeColors.surfaceVariant,
                           color: isCurrent && isPlaying ? '#ffffff' : themeColors.textPrimary,
@@ -424,7 +605,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
                       <div className="min-w-0">
                         <h4 className="text-xs font-semibold truncate leading-tight">{song.title}</h4>
-                        <p className="text-[11px] truncate leading-tight opacity-70">
+                        <p className="text-[11px] truncate leading-tight opacity-70 mt-0.5">
                           {song.artist} • {song.album}
                         </p>
                       </div>
@@ -432,7 +613,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
                     {/* Right Duration & Actions */}
                     <div className="flex items-center gap-2 ml-2">
-                      <span className="text-xs opacity-60 w-10 text-right">
+                      <span className="text-xs opacity-60 w-10 text-right font-mono">
                         {formatMs(song.duration)}
                       </span>
 
@@ -440,7 +621,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       <button
                         onClick={() => onToggleFavorite(song)}
                         className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
-                        title="Favorite"
+                        title={isArabic ? 'المفضلة' : 'Favorite'}
                       >
                         <Heart
                           className="w-4 h-4 transition-all"
@@ -451,95 +632,50 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                         />
                       </button>
 
-                      {/* Context menu toggle */}
-                      <div className="relative">
-                        <button
-                          onClick={() =>
-                            setActiveSongMenuId(activeSongMenuId === song.id ? null : song.id)
-                          }
-                          className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
+                      {/* Send to Deck A */}
+                      <button
+                        onClick={() => onSendToDeckA(song)}
+                        className="p-1.5 rounded-lg border hover:bg-white/10 text-[11px] font-bold"
+                        style={{
+                          borderColor: themeColors.accentA,
+                          color: themeColors.accentA,
+                        }}
+                        title={isArabic ? 'تحميل إلى DECK A' : 'Load into Deck A'}
+                      >
+                        A
+                      </button>
 
-                        {activeSongMenuId === song.id && (
-                          <div
-                            className="absolute right-0 top-full mt-1 w-44 rounded-xl shadow-2xl border p-1.5 z-50 text-xs"
-                            style={{
-                              backgroundColor: themeColors.surface,
-                              borderColor: themeColors.border,
-                            }}
-                          >
-                            <button
-                              onClick={() => {
-                                onEnqueueSong(song);
-                                setActiveSongMenuId(null);
-                              }}
-                              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2"
-                            >
-                              <ListPlus className="w-3.5 h-3.5" />
-                              <span>{isArabic ? 'إضافة إلى الدور' : 'Add to Queue'}</span>
-                            </button>
+                      {/* Send to Deck B */}
+                      <button
+                        onClick={() => onSendToDeckB(song)}
+                        className="p-1.5 rounded-lg border hover:bg-white/10 text-[11px] font-bold"
+                        style={{
+                          borderColor: themeColors.accentB,
+                          color: themeColors.accentB,
+                        }}
+                        title={isArabic ? 'تحميل إلى DECK B' : 'Load into Deck B'}
+                      >
+                        B
+                      </button>
 
-                            <button
-                              onClick={() => {
-                                onSendToDeckA(song);
-                                setActiveSongMenuId(null);
-                              }}
-                              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2"
-                              style={{ color: themeColors.accentA }}
-                            >
-                              <Disc className="w-3.5 h-3.5" />
-                              <span>{isArabic ? 'إرسال إلى Deck A' : 'Send to Deck A'}</span>
-                            </button>
+                      {/* Enqueue */}
+                      <button
+                        onClick={() => onEnqueueSong(song)}
+                        className="p-1.5 rounded-lg border hover:bg-white/10"
+                        style={{ borderColor: themeColors.border }}
+                        title={isArabic ? 'إضافة إلى قائمة الانتظار' : 'Add to queue'}
+                      >
+                        <ListPlus className="w-3.5 h-3.5" />
+                      </button>
 
-                            <button
-                              onClick={() => {
-                                onSendToDeckB(song);
-                                setActiveSongMenuId(null);
-                              }}
-                              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2"
-                              style={{ color: themeColors.accentB }}
-                            >
-                              <Disc className="w-3.5 h-3.5" />
-                              <span>{isArabic ? 'إرسال إلى Deck B' : 'Send to Deck B'}</span>
-                            </button>
-
-                            {playlists.length > 0 && (
-                              <div className="border-t my-1 pt-1 opacity-80" style={{ borderColor: themeColors.border }}>
-                                <div className="px-2 py-1 text-[10px] font-bold opacity-60">
-                                  {isArabic ? 'إضافة إلى قائمة:' : 'Add to Playlist:'}
-                                </div>
-                                {playlists.map((pl) => (
-                                  <button
-                                    key={pl.id}
-                                    onClick={() => {
-                                      onAddSongToPlaylist(pl.id, song);
-                                      setActiveSongMenuId(null);
-                                    }}
-                                    className="w-full text-left px-2.5 py-1 rounded hover:bg-white/10 truncate"
-                                  >
-                                    + {pl.name}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-
-                            <div className="border-t my-1 pt-1" style={{ borderColor: themeColors.border }}>
-                              <button
-                                onClick={() => {
-                                  onDeleteSong(song.id);
-                                  setActiveSongMenuId(null);
-                                }}
-                                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 flex items-center gap-2"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>{isArabic ? 'حذف من المكتبة' : 'Delete'}</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      {/* Delete */}
+                      <button
+                        onClick={() => onDeleteSong(song.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
+                        title={isArabic ? 'حذف من المكتبة' : 'Delete song'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -549,49 +685,94 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         )}
       </div>
 
-      {/* New Playlist Modal */}
-      {showNewPlaylistModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {/* Clear Library Confirmation Modal */}
+      {showConfirmClear && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div
-            className="w-full max-w-sm rounded-2xl border p-5 shadow-2xl"
+            className="w-full max-w-sm p-5 rounded-2xl border shadow-2xl space-y-4"
             style={{
               backgroundColor: themeColors.surface,
               borderColor: themeColors.border,
             }}
           >
-            <h3 className="font-bold text-base mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">
+                  {isArabic ? 'تأكيد مسح المكتبة' : 'Clear All Songs?'}
+                </h3>
+                <p className="text-xs opacity-70">
+                  {isArabic
+                    ? 'هل أنت متأكد من مسح جميع الأغاني المحملة في المكتبة؟'
+                    : 'Are you sure you want to remove all songs from your library?'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowConfirmClear(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold hover:bg-white/5"
+              >
+                {isArabic ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => {
+                  onClearLibrary?.();
+                  setShowConfirmClear(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-500 hover:bg-red-600 text-white shadow-sm"
+              >
+                {isArabic ? 'مسح الكل' : 'Yes, Clear All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Playlist Modal */}
+      {showNewPlaylistModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm p-4 rounded-2xl border shadow-2xl space-y-3"
+            style={{
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+            }}
+          >
+            <h3 className="font-bold text-sm">
               {isArabic ? 'إنشاء قائمة تشغيل جديدة' : 'Create New Playlist'}
             </h3>
             <input
               type="text"
-              placeholder={isArabic ? 'اسم قائمة التشغيل...' : 'Playlist name...'}
+              placeholder={isArabic ? 'اسم القائمة...' : 'Playlist name...'}
               value={newPlaylistName}
               onChange={(e) => setNewPlaylistName(e.target.value)}
-              className="w-full p-2.5 rounded-xl border mb-4 text-xs outline-none"
+              className="w-full px-3 py-2 rounded-xl border text-xs outline-none"
               style={{
                 backgroundColor: themeColors.surfaceVariant,
                 borderColor: themeColors.border,
-                color: themeColors.textPrimary,
               }}
               autoFocus
             />
-            <div className="flex justify-end gap-2 text-xs">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowNewPlaylistModal(false)}
-                className="px-3 py-1.5 rounded-lg border hover:bg-white/5"
-                style={{ borderColor: themeColors.border }}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-white/5"
               >
                 {isArabic ? 'إلغاء' : 'Cancel'}
               </button>
               <button
                 onClick={() => {
                   if (newPlaylistName.trim()) {
-                    onCreatePlaylist(newPlaylistName);
+                    onCreatePlaylist(newPlaylistName.trim());
                     setNewPlaylistName('');
                     setShowNewPlaylistModal(false);
                   }
                 }}
-                className="px-4 py-1.5 rounded-lg font-bold shadow-md"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm"
                 style={{
                   backgroundColor: themeColors.primary,
                   color: '#ffffff',
