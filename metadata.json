@@ -1,0 +1,6 @@
+{
+  "name": "DJ Desktop",
+  "description": "A professional Windows desktop audio player with DJ studio mixer, 10-band equalizer, internet radio, and karaoke studio.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
