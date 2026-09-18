@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Music, Disc3, SlidersHorizontal, Mic2, RadioTower, Globe2, Settings2, ListMusic } from 'lucide-react';
 import {
   TabType,
   AppThemeOption,
@@ -597,8 +598,6 @@ export const App: React.FC = () => {
     >
       {/* Top Windows Native Desktop Title Bar */}
       <TitleBar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
         currentTheme={currentTheme}
         onThemeChange={handleThemeChange}
         isArabic={isArabic}
@@ -606,8 +605,16 @@ export const App: React.FC = () => {
         themeColors={themeColors}
       />
 
-      {/* Main Screen Content Viewport */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+      <div className={`flex-1 min-h-0 flex overflow-hidden ${isArabic ? 'flex-row-reverse' : 'flex-row'}`}>
+        <DesktopSidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          isArabic={isArabic}
+          themeColors={themeColors}
+        />
+
+        {/* Main Screen Content Viewport */}
+        <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden relative">
         {activeTab === 'LIBRARY' && (
           <LibraryScreen
             library={library}
@@ -688,7 +695,8 @@ export const App: React.FC = () => {
           onCrossfadeChange={handleCrossfadeChange}
         />
         )}
-      </main>
+        </main>
+      </div>
 
       {/* Docked Desktop MiniPlayer */}
       <MiniPlayer
@@ -773,3 +781,66 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
+const DesktopSidebar: React.FC<{
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
+  isArabic: boolean;
+  themeColors: typeof THEMES[AppThemeOption];
+}> = ({ activeTab, onTabChange, isArabic, themeColors }) => {
+  const items: Array<{ id: TabType; en: string; ar: string; icon: React.ReactNode }> = [
+    { id: 'LIBRARY', en: 'Library', ar: 'المكتبة', icon: <Music className="w-5 h-5" /> },
+    { id: 'DJ_MIXER', en: 'DJ Studio', ar: 'استوديو DJ', icon: <Disc3 className="w-5 h-5" /> },
+    { id: 'EQUALIZER', en: 'Equalizer', ar: 'المعادل الصوتي', icon: <SlidersHorizontal className="w-5 h-5" /> },
+    { id: 'KARAOKE', en: 'Karaoke', ar: 'كاريوكي', icon: <Mic2 className="w-5 h-5" /> },
+    { id: 'RADIO', en: 'Radio FM', ar: 'راديو مباشر', icon: <RadioTower className="w-5 h-5" /> },
+    { id: 'ONLINE_MUSIC', en: 'Online Music', ar: 'الموسيقى أونلاين', icon: <Globe2 className="w-5 h-5" /> },
+    { id: 'SETTINGS', en: 'Settings', ar: 'الإعدادات', icon: <Settings2 className="w-5 h-5" /> },
+  ];
+
+  return (
+    <aside
+      className="w-[236px] shrink-0 border-r flex flex-col p-3 overflow-y-auto"
+      style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}
+    >
+      <div className="px-3 pt-2 pb-5">
+        <div className="text-[10px] font-bold tracking-[0.24em] opacity-35 uppercase">DJ DESKTOP</div>
+        <div className="text-lg font-black mt-1">{isArabic ? 'محطة الموسيقى' : 'Music Workstation'}</div>
+      </div>
+
+      <nav className="space-y-1.5">
+        {items.map((item) => {
+          const active = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onTabChange(item.id)}
+              className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold transition-all"
+              style={{
+                backgroundColor: active ? themeColors.primary + '18' : 'transparent',
+                color: active ? themeColors.primary : themeColors.textSecondary,
+                border: active ? '1px solid ' + themeColors.primary + '45' : '1px solid transparent',
+              }}
+            >
+              {item.icon}
+              <span>{isArabic ? item.ar : item.en}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto pt-4">
+        <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border }}>
+          <div className="flex items-center gap-2 font-bold">
+            <ListMusic className="w-4 h-4" style={{ color: themeColors.primary }} />
+            {isArabic ? 'وضع سطح المكتب' : 'Desktop Workspace'}
+          </div>
+          <div className="opacity-50 mt-1 leading-relaxed">
+            {isArabic ? 'مصمم للماوس ولوحة المفاتيح والشاشات الكبيرة' : 'Optimized for mouse, keyboard and large screens'}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
