@@ -5,9 +5,6 @@ description = "DJ Desktop - Advanced DJ Mixer, Music Player, Equalizer & Karaoke
 authors = ["DJ Desktop Team"]
 edition = "2021"
 
-[lib]
-name = "dj_desktop_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
