@@ -18,6 +18,8 @@ interface SettingsScreenProps {
   isArabic: boolean;
   onToggleLanguage: () => void;
   themeColors: ThemeColors;
+  crossfadeDurationMs: number;
+  onCrossfadeChange: (durationMs: number) => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -163,6 +165,44 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             );
           })}
         </div>
+      </div>
+
+      {/* Crossfade Section */}
+      <div
+        className="p-4 rounded-2xl border shadow-lg flex flex-col gap-3"
+        style={{
+          backgroundColor: themeColors.surface,
+          borderColor: themeColors.border,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <Sliders className="w-5 h-5" style={{ color: themeColors.primary }} />
+          <h2 className="font-bold text-sm">
+            {isArabic ? 'الانتقال السلس بين الأغاني (Crossfade)' : 'Track Crossfade'}
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min={0}
+            max={15000}
+            step={250}
+            value={crossfadeDurationMs}
+            onChange={(e) => onCrossfadeChange(Number(e.target.value))}
+            className="flex-1"
+            style={{ accentColor: themeColors.primary }}
+          />
+          <span className="font-mono text-xs w-20 text-right">
+            {(crossfadeDurationMs / 1000).toFixed(2)} s
+          </span>
+        </div>
+
+        <p className="text-[10px] opacity-60">
+          {isArabic
+            ? 'يتم تشغيل التراك التالي فعليًا بالتوازي مع نهاية التراك الحالي.'
+            : 'The next track is actually played in parallel with the current track tail.'}
+        </p>
       </div>
 
       {/* Audio Engine Info */}
