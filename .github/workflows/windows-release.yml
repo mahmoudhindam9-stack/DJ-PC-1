@@ -1,0 +1,105 @@
+name: Windows Desktop Build and Release
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - ".github/**"
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm install --no-package-lock
+
+      - name: Build Windows NSIS installer
+        run: npm run build:windows
+
+      - name: Build standalone Uninstall.exe
+        run: cargo build --release --manifest-path installer-tools/uninstall-helper/Cargo.toml
+
+      - name: Prepare exact two-file distribution ZIP
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $nsis = Get-ChildItem "target/*/release/bundle/nsis/*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $nsis) {
+            throw "Tauri NSIS installer was not found."
+          }
+
+          $helper = "installer-tools/uninstall-helper/target/release/dj-uninstall-helper.exe"
+          if (-not (Test-Path $helper)) {
+            throw "Uninstall helper was not built."
+          }
+
+          $root = "package/DJ Desktop $version"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          Copy-Item $nsis.FullName "$root/Install.exe" -Force
+          Copy-Item $helper "$root/Uninstall.exe" -Force
+
+          $files = @(Get-ChildItem $root -File | Select-Object -ExpandProperty Name)
+          if ($files.Count -ne 2 -or -not ($files -contains "Install.exe") -or -not ($files -contains "Uninstall.exe")) {
+            throw "The distribution directory must contain exactly Install.exe and Uninstall.exe."
+          }
+
+          Compress-Archive -Path "$root/*" -DestinationPath "DJ-Desktop-Windows-x64-v$version.zip" -Force
+
+      - name: Verify ZIP contains exactly two files
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $zip = "DJ-Desktop-Windows-x64-v$version.zip"
+          $temp = Join-Path $env:RUNNER_TEMP "dj-zip-check"
+
+          if (Test-Path $temp) {
+            Remove-Item $temp -Recurse -Force
+          }
+
+          Expand-Archive -Path $zip -DestinationPath $temp -Force
+          $files = @(Get-ChildItem $temp -File | Select-Object -ExpandProperty Name)
+
+          if ($files.Count -ne 2 -or -not ($files -contains "Install.exe") -or -not ($files -contains "Uninstall.exe")) {
+            throw "ZIP validation failed. Expected exactly Install.exe and Uninstall.exe."
+          }
+
+          Write-Host "ZIP contents:"
+          $files
+
+      - name: Upload Windows distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJ-Desktop-Windows-x64
+          path: DJ-Desktop-Windows-x64-v*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          gh release create "v$version" "DJ-Desktop-Windows-x64-v$version.zip" --title "DJ Desktop v$version" --notes "Windows x64 distribution. ZIP contains exactly Install.exe and Uninstall.exe."
