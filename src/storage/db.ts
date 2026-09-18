@@ -1,7 +1,7 @@
 import { AudioItem, Playlist, CustomPreset, RadioStation } from '../types';
 
 const DB_NAME = 'dj_desktop_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 class StorageDB {
   private dbPromise: Promise<IDBDatabase>;
@@ -41,6 +41,10 @@ class StorageDB {
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
+
+        if (!db.objectStoreNames.contains('song_blobs')) {
+          db.createObjectStore('song_blobs', { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = () => resolve(request.result);
@@ -51,58 +55,103 @@ class StorageDB {
   // --- SONGS ---
   async getAllSongs(): Promise<AudioItem[]> {
     const db = await this.dbPromise;
-    return new Promise((resolve, reject) => {
+
+    const songs = await new Promise<AudioItem[]>((resolve, reject) => {
       const tx = db.transaction('songs', 'readonly');
-      const store = tx.objectStore('songs');
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      const req = tx.objectStore('songs').getAll();
+      req.onsuccess = () => resolve((req.result || []) as AudioItem[]);
       req.onerror = () => reject(req.error);
+    });
+
+    const localSongs = songs.filter((song) => song.uri.startsWith('idbblob:'));
+    if (localSongs.length === 0) return songs;
+
+    const blobs = await new Promise<Map<string, Blob>>((resolve, reject) => {
+      const tx = db.transaction('song_blobs', 'readonly');
+      const store = tx.objectStore('song_blobs');
+      const map = new Map<string, Blob>();
+      let pending = localSongs.length;
+
+      if (pending === 0) {
+        resolve(map);
+        return;
+      }
+
+      for (const song of localSongs) {
+        const req = store.get(song.id);
+        req.onsuccess = () => {
+          const row = req.result as { id: string; blob: Blob } | undefined;
+          if (row?.blob) map.set(row.id, row.blob);
+          pending--;
+          if (pending === 0) resolve(map);
+        };
+        req.onerror = () => {
+          pending--;
+          if (pending === 0) resolve(map);
+        };
+      }
+
+      tx.onerror = () => reject(tx.error);
+    });
+
+    return songs.map((song) => {
+      if (!song.uri.startsWith('idbblob:')) return song;
+      const blob = blobs.get(song.id);
+      return blob ? { ...song, uri: URL.createObjectURL(blob) } : song;
     });
   }
 
   async addSong(song: AudioItem): Promise<void> {
     const db = await this.dbPromise;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('songs', 'readwrite');
-      const store = tx.objectStore('songs');
-      const req = store.put(song);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
-  }
 
-  async addSongs(songs: AudioItem[]): Promise<void> {
-    const db = await this.dbPromise;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('songs', 'readwrite');
-      const store = tx.objectStore('songs');
-      for (const s of songs) {
-        store.put(s);
+    let storedSong = song;
+    let blob: Blob | null = null;
+
+    // Object URLs are process-scoped and disappear after restart. Persist their bytes
+    // locally and keep a stable marker in the metadata store.
+    if (song.uri.startsWith('blob:')) {
+      const response = await fetch(song.uri);
+      if (!response.ok) throw new Error('Failed to persist imported audio');
+      blob = await response.blob();
+      storedSong = { ...song, uri: `idbblob:${song.id}` };
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(blob ? ['songs', 'song_blobs'] : ['songs'], 'readwrite');
+      tx.objectStore('songs').put(storedSong);
+      if (blob) {
+        tx.objectStore('song_blobs').put({ id: song.id, blob });
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
 
+  async addSongs(songs: AudioItem[]): Promise<void> {
+    for (const song of songs) {
+      await this.addSong(song);
+    }
+  }
+
   async deleteSong(id: string): Promise<void> {
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('songs', 'readwrite');
-      const store = tx.objectStore('songs');
-      const req = store.delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      const tx = db.transaction(['songs', 'song_blobs'], 'readwrite');
+      tx.objectStore('songs').delete(id);
+      tx.objectStore('song_blobs').delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
   }
 
   async clearAllSongs(): Promise<void> {
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('songs', 'readwrite');
-      const store = tx.objectStore('songs');
-      const req = store.clear();
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      const tx = db.transaction(['songs', 'song_blobs'], 'readwrite');
+      tx.objectStore('songs').clear();
+      tx.objectStore('song_blobs').clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
   }
 
