@@ -1,4 +1,5 @@
 import React from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   Minus,
   Square,
@@ -48,6 +49,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   return (
     <header
       id="dj-titlebar"
+      data-tauri-drag-region
       className="flex items-center justify-between px-3 py-1.5 border-b select-none text-xs z-50 shrink-0"
       style={{
         backgroundColor: themeColors.surface,
@@ -151,32 +153,26 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </div>
         </div>
 
-        {/* Windows Titlebar Mock controls (Tauri native-compatible) */}
+        {/* Native Tauri window controls */}
         <div className="flex items-center ml-1">
           <button
             className="p-1.5 hover:bg-white/10 rounded transition-colors"
             title="Minimize"
-            onClick={() => {}}
+            onClick={() => { void getCurrentWindow().minimize(); }}
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
           <button
             className="p-1.5 hover:bg-white/10 rounded transition-colors"
-            title="Maximize"
-            onClick={() => {
-              if (document.fullscreenElement) {
-                document.exitFullscreen().catch(() => {});
-              } else {
-                document.documentElement.requestFullscreen().catch(() => {});
-              }
-            }}
+            title="Maximize / Restore"
+            onClick={() => { void getCurrentWindow().toggleMaximize(); }}
           >
             <Square className="w-3 h-3" />
           </button>
           <button
             className="p-1.5 hover:bg-red-500 hover:text-white rounded transition-colors"
             title="Close"
-            onClick={() => {}}
+            onClick={() => { void getCurrentWindow().close(); }}
           >
             <X className="w-3.5 h-3.5" />
           </button>
