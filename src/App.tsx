@@ -800,7 +800,7 @@ const DesktopSidebar: React.FC<{
 
   return (
     <aside
-      className="w-[236px] shrink-0 border-r flex flex-col p-3 overflow-y-auto"
+      className={`w-[236px] shrink-0 flex flex-col p-3 overflow-y-auto border-${isArabic ? 'l' : 'r'} border-solid`}
       style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}
     >
       <div className="px-3 pt-2 pb-5">
