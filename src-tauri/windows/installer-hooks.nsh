@@ -1,4 +1,7 @@
 !macro NSIS_HOOK_POSTINSTALL
+  CreateDirectory "$SMPROGRAMS\\DJ Desktop"
+  CreateShortCut "$DESKTOP\\DJ Desktop.lnk" "$INSTDIR\\dj-desktop.exe"
+  CreateShortCut "$SMPROGRAMS\\DJ Desktop\\DJ Desktop.lnk" "$INSTDIR\\dj-desktop.exe"
   Exec '"$INSTDIR\\dj-desktop.exe"'
 !macroend
 
