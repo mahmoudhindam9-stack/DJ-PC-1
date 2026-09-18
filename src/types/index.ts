@@ -145,3 +145,28 @@ export interface AudiusTrack {
   genre?: string;
   duration?: number;
 }
+
+
+export interface AlbumatyLink {
+  title: string;
+  url: string;
+  kind: 'song' | 'album' | 'artist' | 'category';
+}
+
+export interface AlbumatyHome {
+  categories: AlbumatyLink[];
+  albums: AlbumatyLink[];
+  songs: AlbumatyLink[];
+  artists: AlbumatyLink[];
+}
+
+export interface AlbumatyTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  artworkUrl?: string;
+  streamUrl: string;
+  downloadUrl?: string;
+  sourceUrl: string;
+}
