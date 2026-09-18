@@ -224,9 +224,10 @@ fn parse_track(source_url: &str, html: &str, resolved_audio: &str) -> AlbumatyTr
         )
     };
 
+    let normalized_html = strip_text(html);
     let album = Regex::new(r#"(?i)اغاني\s+اخرى\s+من\s+ألبوم\s+([^<]+)"#)
         .ok()
-        .and_then(|re| re.captures(&strip_text(html)))
+        .and_then(|re| re.captures(&normalized_html))
         .and_then(|cap| cap.get(1).map(|m| strip_text(m.as_str())));
 
     AlbumatyTrack {
