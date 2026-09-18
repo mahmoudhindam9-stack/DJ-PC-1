@@ -1,22 +1,54 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# DJ Desktop
 
-# Run and deploy your AI Studio app
+Standalone Windows desktop edition of DJ.
 
-This contains everything you need to run your app locally.
+## Windows-only build
 
-View your app in AI Studio: https://ai.studio/apps/7689b14e-3e50-4a26-a6e5-235c3db06254
+This repository is packaged as a Windows desktop application using Tauri 2 + React + TypeScript + Vite.
 
-## Run Locally
+**No Android build is part of this project or its CI.**
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+### Development
 
+Prerequisites:
+- Windows 10/11
+- Node.js
+- Rust toolchain
+- WebView2
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
-7. If you have already published your app in AI Studio, please [request upload key reset](https://support.google.com/googleplay/android-developer/answer/9842756#zippy=%2Crequest-an-upload-key-reset) in Google Play Console.
+Run:
+
+```powershell
+npm install
+npm run dev
+```
+
+Build the Windows installer:
+
+```powershell
+npm install
+npm run build:windows
+```
+
+The Tauri installer is generated as an NSIS `*-setup.exe`.
+
+## Distribution package
+
+The Windows release pipeline creates a ZIP that contains exactly:
+
+```
+Install.exe
+Uninstall.exe
+```
+
+### Install.exe
+Installs DJ Desktop, creates Desktop and Start Menu shortcuts, launches the application after installation, and installs the standard Windows uninstaller.
+
+### Uninstall.exe
+Finds the installed DJ Desktop uninstaller and removes the application. The uninstall hooks also remove DJ Desktop application data and settings stored under its own application directories/registry keys.
+
+User music files outside the DJ Desktop application data/directories are not deleted.
+
+## Android
+
+Android/Gradle files may remain in the source history from the original Remix, but they are not used by the Windows build or release pipeline.
