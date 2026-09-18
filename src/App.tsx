@@ -180,7 +180,7 @@ export const App: React.FC = () => {
       unsubCrossfade();
       unsubError();
     };
-  }, [currentRadioStationId, handleTrackEnded]);
+  }, [currentRadioStationId, queue, currentSong, playbackMode]);
 
   // Desktop Global Keyboard Shortcuts
   useEffect(() => {
