@@ -1,0 +1,107 @@
+name: Windows Desktop Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Install JavaScript dependencies
+        shell: pwsh
+        run: npm install --no-package-lock
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $cfg = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          "version=$($cfg.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows NSIS installer
+        shell: pwsh
+        run: npm run tauri -- build --bundles nsis --target x86_64-pc-windows-msvc
+
+      - name: Prepare Install.exe
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis" -Filter "*-setup.exe" -File | Select-Object -First 1
+          if (-not $setup) {
+            $setup = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -File | Select-Object -First 1
+          }
+          if (-not $setup) { throw "Tauri NSIS installer was not generated." }
+          New-Item -ItemType Directory -Force -Path "release-package" | Out-Null
+          Copy-Item $setup.FullName "release-package/Install.exe" -Force
+
+      - name: Build standalone Uninstall.exe
+        shell: pwsh
+        run: |
+          $makensis = Join-Path ${env:ProgramFiles(x86)} "NSIS/makensis.exe"
+          if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
+          if (-not (Test-Path $makensis)) { throw "NSIS makensis.exe was not found." }
+          & $makensis "packaging/Uninstall.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "Uninstall.exe build failed." }
+          Copy-Item "packaging/Uninstall.exe" "release-package/Uninstall.exe" -Force
+
+      - name: Verify package contains exactly two files
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem "release-package" -File | Select-Object -ExpandProperty Name | Sort-Object
+          $expected = @("Install.exe", "Uninstall.exe")
+          if (($files -join "|") -ne ($expected -join "|")) { throw "Unexpected package contents: $($files -join ', ')" }
+          foreach ($name in $expected) {
+            if ((Get-Item "release-package/$name").Length -le 0) { throw "$name is empty." }
+          }
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $zip = "DJ Desktop-v$version-Windows.zip"
+          Compress-Archive -Path "release-package/Install.exe", "release-package/Uninstall.exe" -DestinationPath $zip -Force
+          if (-not (Test-Path $zip)) { throw "ZIP package was not created." }
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJ-Desktop-Windows-v${{ steps.version.outputs.version }}
+          path: |
+            DJ Desktop-v${{ steps.version.outputs.version }}-Windows.zip
+            release-package/Install.exe
+            release-package/Uninstall.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = "v$version"
+          $zip = "DJ Desktop-v$version-Windows.zip"
+          gh release create $tag $zip --title "DJ Desktop $version - Windows" --notes "Windows package. Extract the ZIP to get exactly Install.exe and Uninstall.exe."
