@@ -27,8 +27,11 @@ export const QueueModal: React.FC<QueueModalProps> = ({
   onRemoveFromQueue,
   onClearQueue,
   playlists,
-  onAddToPlaylist,
+  onMoveItem,
+  onSaveAsPlaylist,
+  onAddQueueToPlaylist,
 }) => {
+  const [selectedPlaylistId, setSelectedPlaylistId] = React.useState('');
   return (
     <div
       id="queue-modal-overlay"
