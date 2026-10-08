@@ -455,6 +455,7 @@ export const App: React.FC = () => {
               db.addSong(track);
               setLibrary([track, ...library]);
             }}
+            onOpenQueue={() => setShowQueue(true)}
           />
         )}
 

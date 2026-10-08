@@ -1,0 +1,70 @@
+name: Windows PC Build
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'app/**'
+      - 'setup.bat'
+      - 'uninstall.bat'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'app/**'
+      - 'setup.bat'
+      - 'uninstall.bat'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify package root
+        shell: powershell
+        run: |
+          $allowed = @('setup.bat', 'uninstall.bat')
+          $unexpected = Get-ChildItem -Path . -File | Where-Object { $_.Name -notin $allowed }
+          if ($unexpected) {
+            $unexpected | ForEach-Object { Write-Error "Unexpected root file: $($_.Name)" }
+            exit 1
+          }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm install --no-audit --no-fund
+
+      - name: Build production app
+        working-directory: app
+        run: npm run build
+
+      - name: Verify PC installer scripts
+        shell: powershell
+        run: |
+          $required = @(
+            'setup.bat',
+            'uninstall.bat',
+            'app/scripts/setup.ps1',
+            'app/scripts/uninstall.ps1',
+            'app/scripts/run-dj-desktop.bat',
+            'app/scripts/run-dj-desktop.vbs',
+            'app/scripts/server.js',
+            'app/src/components/screens/OnlineMusicScreen.tsx',
+            'app/src/services/OnlineMusicService.ts'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              Write-Error "Missing required file: $path"
+              exit 1
+            }
+          }
