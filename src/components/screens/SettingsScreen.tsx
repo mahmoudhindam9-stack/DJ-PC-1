@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Settings as SettingsIcon,
   Palette,
@@ -8,9 +7,16 @@ import {
   Check,
   Headphones,
   HardDrive,
+  Monitor,
+  Download,
+  Terminal,
+  Sparkles,
+  Trash2,
+  FolderTree,
 } from 'lucide-react';
 import { AppThemeOption, ThemeColors } from '../../types';
 import { THEMES } from '../../utils/theme';
+import { downloadSetupBat, downloadUninstallBat, downloadShortcutBat } from '../../utils/setupDownloader';
 
 interface SettingsScreenProps {
   currentTheme: AppThemeOption;
@@ -18,6 +24,7 @@ interface SettingsScreenProps {
   isArabic: boolean;
   onToggleLanguage: () => void;
   themeColors: ThemeColors;
+  onOpenSetupModal: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -26,6 +33,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   isArabic,
   onToggleLanguage,
   themeColors,
+  onOpenSetupModal,
 }) => {
   const themeList = Object.keys(THEMES) as AppThemeOption[];
 
@@ -193,6 +201,83 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <span className="opacity-60 text-[10px]">BUFFER LATENCY</span>
             <div className="font-mono font-bold text-sm mt-0.5">&lt; 15 ms (Ultra-Low)</div>
           </div>
+        </div>
+      </div>
+
+      {/* Desktop Setup & Shortcut Installer */}
+      <div
+        className="p-5 rounded-2xl border shadow-lg flex flex-col gap-4 relative overflow-hidden"
+        style={{
+          backgroundColor: themeColors.surface,
+          borderColor: themeColors.border,
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Monitor className="w-5 h-5 text-emerald-400" />
+            <h2 className="font-bold text-sm">
+              {isArabic ? 'تثبيت البرنامج وملف Setup لسطح المكتب' : 'Desktop Setup & Shortcut Installer'}
+            </h2>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">
+            Windows / PC
+          </span>
+        </div>
+
+        <p className="text-xs leading-relaxed opacity-80">
+          {isArabic
+            ? 'يحتوي البرنامج على ملف setup.bat للتثبيت التلقائي وملف uninstall.bat لإلغاء التثبيت وحذف جميع الملفات المثبتة. جميع الملفات الأخرى منظمة ومرتبة داخل مجلدات.'
+            : 'Includes setup.bat for automated installation and uninstall.bat for complete removal of installed files. All other files are neatly organized inside dedicated subfolders.'}
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <button
+            onClick={onOpenSetupModal}
+            className="py-2.5 px-4 rounded-xl text-xs font-bold text-white flex items-center gap-2 shadow-md transition-all active:scale-95 hover:opacity-90"
+            style={{ backgroundColor: themeColors.primary }}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{isArabic ? 'مركز الإعداد والتثبيت' : 'Setup & Install Hub'}</span>
+          </button>
+
+          <button
+            onClick={downloadSetupBat}
+            className="py-2.5 px-4 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all hover:bg-white/10"
+            style={{
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              color: '#34d399',
+            }}
+          >
+            <Download className="w-4 h-4" />
+            <span>{isArabic ? 'تحميل (setup.bat)' : 'Download setup.bat'}</span>
+          </button>
+
+          <button
+            onClick={downloadShortcutBat}
+            className="py-2.5 px-4 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all hover:bg-white/10"
+            style={{
+              borderColor: 'rgba(59, 130, 246, 0.4)',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              color: '#60a5fa',
+            }}
+          >
+            <Download className="w-4 h-4" />
+            <span>{isArabic ? 'الأيقونة فقط (.bat)' : 'Shortcut only (.bat)'}</span>
+          </button>
+
+          <button
+            onClick={downloadUninstallBat}
+            className="py-2.5 px-4 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all hover:bg-white/10"
+            style={{
+              borderColor: 'rgba(239, 68, 68, 0.4)',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              color: '#f87171',
+            }}
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>{isArabic ? 'تحميل (uninstall.bat)' : 'Download uninstall.bat'}</span>
+          </button>
         </div>
       </div>
 

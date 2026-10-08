@@ -23,6 +23,8 @@ import { RadioScreen } from './components/screens/RadioScreen';
 import { OnlineMusicScreen } from './components/screens/OnlineMusicScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { batchImportAudioFiles } from './utils/fileImporter';
+import { DesktopSetupModal } from './components/desktop/DesktopSetupModal';
+
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('LIBRARY');
@@ -46,6 +48,7 @@ export const App: React.FC = () => {
   // Modals
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
+  const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
 
   const themeColors = THEMES[currentTheme] || THEMES.DJ_BLUE;
 
@@ -381,6 +384,7 @@ export const App: React.FC = () => {
         isArabic={isArabic}
         onToggleLanguage={handleToggleLanguage}
         themeColors={themeColors}
+        onOpenSetupModal={() => setIsSetupModalOpen(true)}
       />
 
       {/* Main Screen Content Viewport */}
@@ -461,6 +465,7 @@ export const App: React.FC = () => {
             isArabic={isArabic}
             onToggleLanguage={handleToggleLanguage}
             themeColors={themeColors}
+            onOpenSetupModal={() => setIsSetupModalOpen(true)}
           />
         )}
       </main>
@@ -537,6 +542,14 @@ export const App: React.FC = () => {
           onAddToPlaylist={handleAddSongToPlaylist}
         />
       )}
+
+      {/* Desktop Setup & Shortcut Installer Modal */}
+      <DesktopSetupModal
+        isOpen={isSetupModalOpen}
+        onClose={() => setIsSetupModalOpen(false)}
+        themeColors={themeColors}
+        isArabic={isArabic}
+      />
     </div>
   );
 };

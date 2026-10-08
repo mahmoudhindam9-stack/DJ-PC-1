@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { TabType, AppThemeOption, ThemeColors } from '../types';
 import { THEMES } from '../utils/theme';
+import { PWAInstallButton } from './desktop/PWAInstallButton';
 
 interface TitleBarProps {
   activeTab: TabType;
@@ -24,6 +25,7 @@ interface TitleBarProps {
   isArabic: boolean;
   onToggleLanguage: () => void;
   themeColors: ThemeColors;
+  onOpenSetupModal: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -34,6 +36,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   isArabic,
   onToggleLanguage,
   themeColors,
+  onOpenSetupModal,
 }) => {
   const tabs: Array<{ id: TabType; labelEn: string; labelAr: string; icon: React.ReactNode }> = [
     { id: 'LIBRARY', labelEn: 'Library', labelAr: 'المكتبة', icon: <Music className="w-4 h-4" /> },
@@ -100,8 +103,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         })}
       </nav>
 
-      {/* Right Controls: Quick Theme, Language, Window buttons */}
+      {/* Right Controls: Desktop Setup / PWA Install, Quick Theme, Language, Window buttons */}
       <div className="flex items-center gap-1.5">
+        {/* Desktop Setup / PWA Installer Button */}
+        <PWAInstallButton
+          themeColors={themeColors}
+          isArabic={isArabic}
+          onOpenSetupModal={onOpenSetupModal}
+        />
+
         {/* Language switch */}
         <button
           onClick={onToggleLanguage}
