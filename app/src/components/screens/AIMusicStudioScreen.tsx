@@ -200,7 +200,7 @@ export const AIMusicStudioScreen: React.FC<AIMusicStudioScreenProps> = ({
               <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-semibold">
                 <span className="rounded-lg border px-2.5 py-1.5 flex items-center gap-1.5" style={{ borderColor: border }}><Headphones className="w-3.5 h-3.5" />{isArabic ? 'صوت ستيريو' : 'Stereo audio'}</span>
                 <span className="rounded-lg border px-2.5 py-1.5 flex items-center gap-1.5" style={{ borderColor: border }}><Clock3 className="w-3.5 h-3.5" />{durationSeconds + ' sec'}</span>
-                <span className="rounded-lg border px-2.5 py-1.5 flex items-center gap-1.5" style={{ borderColor: border }}><ShieldCheck className="w-3.5 h-3.5" />{isArabic ? 'استدلال محلي' : 'Local inference'}</span>
+                <span className="rounded-lg border px-2.5 py-1.5 flex items-center gap-1.5" style={{ borderColor: border }}><HardDrive className="w-3.5 h-3.5" />{isArabic ? 'استدلال محلي' : 'Local inference'}</span>
               </div>
             </div>
           </div>
