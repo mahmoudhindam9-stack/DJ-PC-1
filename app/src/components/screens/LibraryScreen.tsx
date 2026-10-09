@@ -615,13 +615,14 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 return (
                   <div
                     key={song.id}
-                    className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
-                      isCurrent ? 'font-bold' : 'hover:bg-white/5'
-                    }`}
+                    className={'dj-track-row flex items-center justify-between p-2.5 rounded-xl border transition-all duration-200 ' + (isCurrent ? 'font-bold' : '')}
+                    aria-current={isCurrent ? 'true' : undefined}
                     style={{
-                      backgroundColor: isCurrent ? `${themeColors.primary}18` : themeColors.surface,
+                      backgroundColor: isCurrent ? themeColors.primary + '20' : themeColors.surface,
                       borderColor: isCurrent ? themeColors.primary : themeColors.border,
-                    }}
+                      boxShadow: isCurrent ? 'inset 3px 0 0 ' + themeColors.primary + ', 0 0 0 1px ' + themeColors.primary + '35' : undefined,
+                      '--dj-track-accent': themeColors.primary,
+                    } as React.CSSProperties}
                   >
                     {/* Left Play & Title */}
                     <div
@@ -636,6 +637,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                         }}
                       >
                         {isCurrent && isPlaying ? (
+                          <span className="dj-playing-indicator" role="img" aria-label={isArabic ? 'يتم التشغيل' : 'Now playing'}><i /><i /><i /></span>
+                        ) : isCurrent ? (
                           <span className="w-3 h-3 flex items-center justify-center">▶</span>
                         ) : (
                           <span className="text-xs font-mono">{idx + 1}</span>
@@ -643,7 +646,10 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       </button>
 
                       <div className="min-w-0">
-                        <h4 className="text-xs font-semibold truncate leading-tight">{song.title}</h4>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h4 className="text-xs font-semibold truncate leading-tight">{song.title}</h4>
+                          {isCurrent && <span className="dj-now-playing-badge shrink-0">{isPlaying ? (isArabic ? 'يعمل الآن' : 'NOW PLAYING') : (isArabic ? 'المحدد' : 'SELECTED')}</span>}
+                        </div>
                         <p className="text-[11px] truncate leading-tight opacity-70 mt-0.5">
                           {song.artist} • {song.album}
                         </p>

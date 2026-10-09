@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TabType,
   AppThemeOption,
@@ -25,6 +25,9 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 import { batchImportAudioFiles } from './utils/fileImporter';
 import { DesktopSetupModal } from './components/desktop/DesktopSetupModal';
 import { updateService, type UpdateInfo, type UpdateStatus } from './services/UpdateService';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { isTauri } from '@tauri-apps/api/core';
+import { CONTROL_CHANNEL_NAME, type DesktopControlCommand, type DesktopControlMessage, type ControlPlayerState } from './services/ControlChannel';
 
 
 export const App: React.FC = () => {
@@ -469,6 +472,127 @@ export const App: React.FC = () => {
     });
   }, [appDataLoaded, autoUpdatesEnabled, isPlaying, isArabic, updateInfo, updateStatus]);
 
+
+  const controlChannelRef = useRef<BroadcastChannel | null>(null);
+  const controlSnapshotRef = useRef<ControlPlayerState | null>(null);
+  const controlCommandHandlerRef = useRef<(command: DesktopControlCommand) => void>(() => {});
+
+  controlSnapshotRef.current = {
+    song: currentSong ? {
+      id: currentSong.id,
+      title: currentSong.title,
+      artist: currentSong.artist,
+      album: currentSong.album,
+      coverUri: currentSong.coverUri && /^https?:\/\//i.test(currentSong.coverUri) ? currentSong.coverUri : undefined,
+    } : null,
+    isPlaying,
+    currentTimeMs,
+    durationMs,
+    volume,
+    playbackMode,
+    isArabic,
+    themeColors,
+  };
+
+  controlCommandHandlerRef.current = (command) => {
+    switch (command.action) {
+      case 'toggle':
+        handlePlayPause();
+        break;
+      case 'next':
+        handleNext();
+        break;
+      case 'previous':
+        handlePrev();
+        break;
+      case 'seek':
+        if (Number.isFinite(command.ms)) {
+          handleSeek(Math.max(0, Math.min(durationMs || command.ms, command.ms)));
+        }
+        break;
+      case 'volume':
+        if (Number.isFinite(command.value)) {
+          handleVolumeChange(Math.max(0, Math.min(1, command.value)));
+        }
+        break;
+      case 'toggle-playback-mode':
+        handleTogglePlaybackMode();
+        break;
+    }
+  };
+
+  const handleOpenControlPanel = async () => {
+    try {
+      if (isTauri()) {
+        const existing = await WebviewWindow.getByLabel('dj-control-panel');
+        if (existing) {
+          await existing.show();
+          await existing.setFocus();
+          return;
+        }
+        const panel = new WebviewWindow('dj-control-panel', {
+          url: '/?control=1',
+          title: 'DJ Control Center',
+          width: 390,
+          height: 780,
+          minWidth: 340,
+          minHeight: 560,
+          resizable: true,
+          center: true,
+          alwaysOnTop: true,
+        });
+        panel.once('tauri://error', (event) => console.error('Could not create DJ control panel:', event));
+      } else {
+        const controlWindow = window.open(
+          window.location.origin + '/?control=1',
+          'dj-control-panel',
+          'popup=yes,width=390,height=780,resizable=yes'
+        );
+        if (!controlWindow) console.warn('The browser blocked the control panel popup.');
+      }
+    } catch (error) {
+      console.error('Could not open DJ control panel:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel(CONTROL_CHANNEL_NAME);
+    controlChannelRef.current = channel;
+    channel.onmessage = (event: MessageEvent<DesktopControlMessage>) => {
+      const message = event.data;
+      if (message?.type === 'request-state') {
+        channel.postMessage({ type: 'player-state', state: controlSnapshotRef.current } satisfies DesktopControlMessage);
+      } else if (message?.type === 'command') {
+        controlCommandHandlerRef.current(message.command);
+      }
+    };
+    return () => {
+      channel.close();
+      controlChannelRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    controlChannelRef.current?.postMessage({
+      type: 'player-state',
+      state: controlSnapshotRef.current,
+    } satisfies DesktopControlMessage);
+  }, [
+    currentSong?.id,
+    currentSong?.title,
+    currentSong?.artist,
+    currentSong?.album,
+    currentSong?.coverUri,
+    isPlaying,
+    currentTimeMs,
+    durationMs,
+    volume,
+    playbackMode,
+    isArabic,
+    themeColors,
+  ]);
+
   return (
     <div
       id="dj-desktop-app"
@@ -488,6 +612,7 @@ export const App: React.FC = () => {
         onToggleLanguage={handleToggleLanguage}
         themeColors={themeColors}
         onOpenSetupModal={() => setIsSetupModalOpen(true)}
+        onOpenControlPanel={handleOpenControlPanel}
       />
 
       {/* Main Screen Content Viewport */}
