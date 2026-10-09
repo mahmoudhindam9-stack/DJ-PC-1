@@ -219,6 +219,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     isPlaying: deckAEngine.isPlaying,
     currentBpm: deckAEngine.currentBpm,
     bpmConfidence: deckAEngine.bpmConfidence,
+    loopBeats: deckAEngine.loopBeats,
     currentTime: deckAEngine.currentTimeMs,
     duration: deckAEngine.durationMs,
     pitch: deckAEngine.pitch,
@@ -232,6 +233,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     isPlaying: deckBEngine.isPlaying,
     currentBpm: deckBEngine.currentBpm,
     bpmConfidence: deckBEngine.bpmConfidence,
+    loopBeats: deckBEngine.loopBeats,
     currentTime: deckBEngine.currentTimeMs,
     duration: deckBEngine.durationMs,
     pitch: deckBEngine.pitch,
@@ -244,6 +246,9 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   const [samplerVolume, setSamplerVolume] = useState(savedSettings.samplerVolume);
   const [trackSelectorDeck, setTrackSelectorDeck] = useState<'A' | 'B' | null>(null);
   const [beatSyncMessage, setBeatSyncMessage] = useState<string | null>(null);
+  const [autoFillEnabled, setAutoFillEnabled] = useState(() => {
+    try { return window.localStorage.getItem('dj-mixer-auto-fill-v1') === 'true'; } catch { return false; }
+  });
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleChooseLocalFolder = async () => {
@@ -273,6 +278,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
         isPlaying: deckAEngine.isPlaying,
         currentBpm: deckAEngine.currentBpm,
         bpmConfidence: deckAEngine.bpmConfidence,
+        loopBeats: deckAEngine.loopBeats,
         currentTime: deckAEngine.currentTimeMs,
         duration: deckAEngine.durationMs,
         pitch: deckAEngine.pitch,
@@ -288,6 +294,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
         isPlaying: deckBEngine.isPlaying,
         currentBpm: deckBEngine.currentBpm,
         bpmConfidence: deckBEngine.bpmConfidence,
+        loopBeats: deckBEngine.loopBeats,
         currentTime: deckBEngine.currentTimeMs,
         duration: deckBEngine.durationMs,
         pitch: deckBEngine.pitch,
@@ -303,6 +310,33 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     };
   }, []);
 
+  // Auto Fill loads any empty deck from the library and keeps each deck supplied
+  // with the next library track when its current track finishes.
+  useEffect(() => {
+    try { window.localStorage.setItem('dj-mixer-auto-fill-v1', String(autoFillEnabled)); } catch { /* optional persistence */ }
+    if (!autoFillEnabled || library.length === 0) return;
+
+    if (!deckAEngine.currentTrack) {
+      const nextA = getNextAutoFillTrack(null, deckBEngine.currentTrack);
+      if (nextA) deckAEngine.loadTrack(nextA);
+    }
+    if (!deckBEngine.currentTrack) {
+      const nextB = getNextAutoFillTrack(null, deckAEngine.currentTrack);
+      if (nextB) deckBEngine.loadTrack(nextB);
+    }
+
+    const autoLoadAndPlay = (deck: 'A' | 'B') => {
+      const engine = deck === 'A' ? deckAEngine : deckBEngine;
+      const other = deck === 'A' ? deckBEngine : deckAEngine;
+      const next = getNextAutoFillTrack(engine.currentTrack, other.currentTrack);
+      if (!next) return;
+      engine.loadTrack(next);
+      void engine.play();
+    };
+    const offA = deckAEngine.onTrackEnded(() => autoLoadAndPlay('A'));
+    const offB = deckBEngine.onTrackEnded(() => autoLoadAndPlay('B'));
+    return () => { offA(); offB(); };
+  }, [autoFillEnabled, library]);
 
   // Restore and persist the complete DJ mixer control state between screen visits and app restarts.
   useEffect(() => {
@@ -413,6 +447,28 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
       deckBEngine.loadTrack(track);
     }
     setTrackSelectorDeck(null);
+  };
+
+  const getNextAutoFillTrack = (current: AudioItem | null, other: AudioItem | null): AudioItem | null => {
+    if (library.length === 0) return null;
+    const currentIndex = current ? library.findIndex((track) => track.id === current.id) : -1;
+    for (let step = 1; step <= library.length; step += 1) {
+      const index = (currentIndex + step + library.length) % library.length;
+      const candidate = library[index];
+      if (!candidate) continue;
+      if (library.length === 1 || candidate.id !== other?.id) return candidate;
+    }
+    return library[0] || null;
+  };
+
+  const handleLoopBeats = (deck: 'A' | 'B', beats: number) => {
+    const engine = deck === 'A' ? deckAEngine : deckBEngine;
+    const success = engine.setLoopBeats(beats);
+    if (!success) {
+      setBeatSyncMessage(isArabic
+        ? 'حمّل أغنية أو اختر لوبًا أقصر من المدة المتبقية في المسار.'
+        : 'Load a track or choose a shorter loop that fits inside this track.');
+    }
   };
 
   const formatMs = (ms: number) => {
@@ -646,6 +702,26 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
         </p>
       </div>
 
+      {/* Auto Fill */}
+      <div className="p-4 rounded-2xl border shadow-lg flex flex-wrap items-center justify-between gap-3" style={{ backgroundColor: themeColors.surface, borderColor: autoFillEnabled ? '#00e67680' : themeColors.border }}>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xs font-black tracking-[0.16em]">{isArabic ? 'الملء التلقائي للديكين' : 'DJ AUTO FILL'}</h2>
+          <p className="mt-1 text-[10px] opacity-65">
+            {isArabic ? 'يملأ الديك الفارغ من المكتبة، ويحمّل ويشغّل الأغنية التالية تلقائيًا عند انتهاء المسار.' : 'Fills empty decks from your library, then loads and plays the next song when a deck finishes.'}
+          </p>
+          <p className="mt-1 text-[10px]" style={{ color: autoFillEnabled ? '#00e676' : themeColors.textMuted }}>
+            {library.length === 0
+              ? (isArabic ? 'أضف أغاني إلى المكتبة أولًا.' : 'Add tracks to your library first.')
+              : autoFillEnabled
+                ? (isArabic ? 'مفعّل — التحميل والتشغيل التالي تلقائي.' : 'ON — next tracks load and play automatically.')
+                : (isArabic ? 'متوقف — اختر تشغيله عند الحاجة.' : 'OFF — enable when you want automatic loading.')}
+          </p>
+        </div>
+        <button type="button" onClick={() => setAutoFillEnabled((enabled) => !enabled)} className="rounded-xl border px-4 py-2.5 text-xs font-black transition-all" style={{ color: autoFillEnabled ? '#001b0b' : themeColors.primary, backgroundColor: autoFillEnabled ? '#00e676' : themeColors.surfaceVariant, borderColor: autoFillEnabled ? '#00e676' : themeColors.border }}>
+          {autoFillEnabled ? (isArabic ? 'الملء التلقائي: ON' : 'AUTO FILL: ON') : (isArabic ? 'تفعيل الملء التلقائي' : 'ENABLE AUTO FILL')}
+        </button>
+      </div>
+
       {/* DECK A & DECK B SIDE-BY-SIDE */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         {/* DECK A */}
@@ -728,6 +804,24 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
               {deckAState.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
               <span>{deckAState.isPlaying ? 'PAUSE' : 'PLAY'}</span>
             </button>
+          </div>
+
+          {/* Beat-quantized Auto Loop controls for DECK A. */}
+          <div className="rounded-xl border p-2.5 flex flex-col gap-2" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentA + '55' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black tracking-wider">{isArabic ? 'لووب تلقائي' : 'AUTO LOOP'} · A</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: themeColors.accentA }}>{deckAState.loopBeats > 0 ? String(deckAState.loopBeats) + (isArabic ? ' نبضات' : ' BEATS') : (isArabic ? 'متوقف' : 'OFF')}</span>
+            </div>
+            <div className="grid grid-cols-6 gap-1">
+              {([0, 1, 2, 4, 8, 16] as const).map((beats) => {
+                const selected = deckAState.loopBeats === beats;
+                return (
+                  <button key={beats} type="button" disabled={!deckAState.track} onClick={() => handleLoopBeats('A', beats)} className="rounded-md border py-2 text-[10px] font-black transition-all disabled:opacity-40" style={{ backgroundColor: selected ? themeColors.accentA : themeColors.surface, color: selected ? '#ffffff' : themeColors.textPrimary, borderColor: selected ? themeColors.accentA : themeColors.border }} title={beats === 0 ? (isArabic ? 'إيقاف اللوب' : 'Disable loop') : (isArabic ? 'تكرار ' + beats + ' نبضة' : 'Loop ' + beats + ' beats')}>
+                    {beats === 0 ? 'OFF' : beats}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Independent DECK A volume knob */}
@@ -928,6 +1022,24 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
               {deckBState.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
               <span>{deckBState.isPlaying ? 'PAUSE' : 'PLAY'}</span>
             </button>
+          </div>
+
+          {/* Beat-quantized Auto Loop controls for DECK B. */}
+          <div className="rounded-xl border p-2.5 flex flex-col gap-2" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentB + '55' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black tracking-wider">{isArabic ? 'لووب تلقائي' : 'AUTO LOOP'} · B</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: themeColors.accentB }}>{deckBState.loopBeats > 0 ? String(deckBState.loopBeats) + (isArabic ? ' نبضات' : ' BEATS') : (isArabic ? 'متوقف' : 'OFF')}</span>
+            </div>
+            <div className="grid grid-cols-6 gap-1">
+              {([0, 1, 2, 4, 8, 16] as const).map((beats) => {
+                const selected = deckBState.loopBeats === beats;
+                return (
+                  <button key={beats} type="button" disabled={!deckBState.track} onClick={() => handleLoopBeats('B', beats)} className="rounded-md border py-2 text-[10px] font-black transition-all disabled:opacity-40" style={{ backgroundColor: selected ? themeColors.accentB : themeColors.surface, color: selected ? '#ffffff' : themeColors.textPrimary, borderColor: selected ? themeColors.accentB : themeColors.border }} title={beats === 0 ? (isArabic ? 'إيقاف اللوب' : 'Disable loop') : (isArabic ? 'تكرار ' + beats + ' نبضة' : 'Loop ' + beats + ' beats')}>
+                    {beats === 0 ? 'OFF' : beats}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Independent DECK B volume knob */}

@@ -64,6 +64,10 @@ export class DJDeckEngine {
   public currentTrack: AudioItem | null = null;
   public pitch = 1.0;
   public cuePositionMs = 0;
+  public loopBeats = 0;
+  private loopStartMs = 0;
+  private loopEndMs = 0;
+  private onTrackEndedCallbacks: Array<() => void> = [];
   public activeEffect: DJEffectType = 'none';
   public fxAmount = 0.5;
   public isPlaying = false;
@@ -102,6 +106,9 @@ export class DJDeckEngine {
       this.isPlaying = false;
       this.stopBpmDetection();
       this.notify();
+      this.onTrackEndedCallbacks.forEach((callback) => {
+        try { callback(); } catch (error) { console.warn('DJ deck auto-fill callback failed:', error); }
+      });
     });
     this.audioElement.addEventListener('timeupdate', () => this.notify());
     this.audioElement.addEventListener('durationchange', () => this.notify());
@@ -223,6 +230,9 @@ export class DJDeckEngine {
   loadTrack(track: AudioItem) {
     this.ensureContext();
     this.resetBpmDetection();
+    this.loopBeats = 0;
+    this.loopStartMs = 0;
+    this.loopEndMs = 0;
     this.currentTrack = track;
     this.audioElement.src = track.uri;
     this.audioElement.load();
@@ -264,6 +274,57 @@ export class DJDeckEngine {
   setCue() {
     this.cuePositionMs = this.currentTimeMs;
     this.notify();
+  }
+
+  /** Activate a beat-quantized loop, or pass 0 to turn it off. */
+  setLoopBeats(beats: number): boolean {
+    const next = Math.round(beats);
+    if (next <= 0) {
+      this.loopBeats = 0;
+      this.loopStartMs = 0;
+      this.loopEndMs = 0;
+      this.notify();
+      return true;
+    }
+    if (![1, 2, 4, 8, 16].includes(next) || !this.currentTrack) return false;
+
+    // BPM measured from audio includes pitch. Convert beat length to media time.
+    const playbackRate = Math.max(0.25, this.audioElement.playbackRate || 1);
+    const measuredBpm = this.currentBpm || 120;
+    const loopLengthMs = next * 60000 * playbackRate / measuredBpm;
+    const trackLengthMs = this.durationMs;
+    const safeTrackEndMs = trackLengthMs > 0 ? trackLengthMs - 120 : Number.POSITIVE_INFINITY;
+    if (!Number.isFinite(loopLengthMs) || loopLengthMs <= 0 || loopLengthMs > safeTrackEndMs) return false;
+
+    this.loopStartMs = Math.max(0, Math.min(this.currentTimeMs, safeTrackEndMs - loopLengthMs));
+    this.loopEndMs = this.loopStartMs + loopLengthMs;
+    this.loopBeats = next;
+    this.notify();
+    return true;
+  }
+
+  private handleActiveLoopFrame(): boolean {
+    if (!this.isPlaying || this.loopBeats <= 0 || this.loopEndMs <= this.loopStartMs) return false;
+    const currentMs = this.currentTimeMs;
+    if (currentMs >= this.loopEndMs || currentMs < this.loopStartMs) {
+      const lengthMs = this.loopEndMs - this.loopStartMs;
+      const overshoot = currentMs >= this.loopEndMs ? (currentMs - this.loopStartMs) % lengthMs : 0;
+      try {
+        this.audioElement.currentTime = (this.loopStartMs + overshoot) / 1000;
+      } catch {
+        return false;
+      }
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  onTrackEnded(callback: () => void): () => void {
+    this.onTrackEndedCallbacks.push(callback);
+    return () => {
+      this.onTrackEndedCallbacks = this.onTrackEndedCallbacks.filter((registered) => registered !== callback);
+    };
   }
 
   seekTo(positionMs: number) {
@@ -530,6 +591,12 @@ export class DJDeckEngine {
   private sampleBpmFrame = (timestamp: number): void => {
     this.bpmFrameId = null;
     if (!this.isPlaying || !this.bpmAnalyser || !this.ctx) return;
+
+    if (this.handleActiveLoopFrame()) {
+      this.bpmLastSampleAt = timestamp;
+      this.bpmFrameId = window.requestAnimationFrame(this.sampleBpmFrame);
+      return;
+    }
 
     if (this.bpmLastSampleAt === 0) {
       this.bpmLastSampleAt = timestamp;
