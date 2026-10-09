@@ -369,6 +369,12 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
         </div>
       </div>
 
+      <div className="rounded-xl border px-3 py-2.5 text-xs leading-relaxed" style={{ borderColor: themeColors.primary + '75', backgroundColor: themeColors.primary + '10', color: themeColors.textSecondary }}>
+        {isArabic
+          ? 'المعادل موحّد لكل مخارج الصوت: المشغل الرئيسي، ديكا DJ، المايك، السامبلر، والراديو والموسيقى الأونلاين.'
+          : 'Global EQ applies to every output: Main Player, both DJ decks, microphone, sampler, Radio and Online Music.'}
+      </div>
+
       {/* Status banner */}
       {statusMessage && (
         <div

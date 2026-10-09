@@ -1,9 +1,13 @@
 import { SamplePad } from '../types';
+import { connectGlobalEqualizer, GlobalEqualizerConnection } from './GlobalEqualizer';
 
 export class SamplerEngine {
   private ctx: AudioContext | null = null;
   private audioBuffers: Map<string, AudioBuffer> = new Map();
   private activeSources: Map<string, AudioBufferSourceNode> = new Map();
+  private masterBus: GainNode | null = null;
+  private globalEqConnection: GlobalEqualizerConnection | null = null;
+  private fallbackAudioNodes = new Map<string, { audio: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode }>();
   public volume = 0.9;
   public currentBank: 'A' | 'B' | 'C' | 'D' = 'A';
 
@@ -86,6 +90,9 @@ export class SamplerEngine {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
+      this.masterBus = this.ctx.createGain();
+      this.masterBus.gain.value = 1;
+      this.globalEqConnection = connectGlobalEqualizer(this.ctx, this.masterBus, this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
@@ -95,6 +102,13 @@ export class SamplerEngine {
 
   async triggerPad(pad: SamplePad): Promise<void> {
     const ctx = this.ensureContext();
+    const fallback = this.fallbackAudioNodes.get(pad.id);
+    if (fallback) {
+      fallback.audio.pause();
+      fallback.source.disconnect();
+      fallback.gain.disconnect();
+      this.fallbackAudioNodes.delete(pad.id);
+    }
     try {
       let buffer = this.audioBuffers.get(pad.assetPath);
       if (!buffer) {
@@ -121,7 +135,8 @@ export class SamplerEngine {
       gain.gain.value = this.volume;
 
       source.connect(gain);
-      gain.connect(ctx.destination);
+      if (this.masterBus) gain.connect(this.masterBus);
+      else gain.connect(ctx.destination);
 
       source.onended = () => {
         this.activeSources.delete(pad.id);
@@ -130,10 +145,29 @@ export class SamplerEngine {
       source.start(0);
       this.activeSources.set(pad.id, source);
     } catch (err) {
-      console.warn('Sampler playback fallback (using Audio element):', err);
-      const audio = new Audio(pad.assetPath);
-      audio.volume = this.volume;
-      audio.play().catch(() => {});
+      console.warn('Sampler playback fallback (routed through global EQ):', err);
+      try {
+        const fallbackContext = this.ensureContext();
+        const audio = new Audio(pad.assetPath);
+        audio.preload = 'auto';
+        audio.volume = 1;
+        const source = fallbackContext.createMediaElementSource(audio);
+        const gain = fallbackContext.createGain();
+        gain.gain.value = this.volume;
+        source.connect(gain);
+        if (this.masterBus) gain.connect(this.masterBus);
+        else gain.connect(fallbackContext.destination);
+        this.fallbackAudioNodes.set(pad.id, { audio, source, gain });
+        audio.addEventListener('ended', () => {
+          const active = this.fallbackAudioNodes.get(pad.id);
+          if (active?.audio !== audio) return;
+          this.fallbackAudioNodes.delete(pad.id);
+          try { source.disconnect(); gain.disconnect(); } catch { /* already disconnected */ }
+        }, { once: true });
+        await audio.play();
+      } catch (fallbackError) {
+        console.warn('Sampler fallback could not play:', fallbackError);
+      }
     }
   }
 

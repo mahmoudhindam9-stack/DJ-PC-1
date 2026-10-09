@@ -1,4 +1,5 @@
 import { MicFilterType, BeatFxDivision, MicVoiceEffectType } from '../types';
+import { connectGlobalEqualizer, GlobalEqualizerConnection } from './GlobalEqualizer';
 
 export class MicEngine {
   private ctx: AudioContext | null = null;
@@ -25,6 +26,7 @@ export class MicEngine {
   private flangerLfoGain: GainNode | null = null;
   private masterOutputGain: GainNode | null = null;
   private recordingDestination: MediaStreamAudioDestinationNode | null = null;
+  private globalEqConnection: GlobalEqualizerConnection | null = null;
   private analyser: AnalyserNode | null = null;
 
   // MediaRecorder for recording processed vocals
@@ -202,9 +204,10 @@ export class MicEngine {
     this.flangerWetGain.connect(this.masterOutputGain);
     this.beatWetGain.connect(this.masterOutputGain);
 
-    this.masterOutputGain.connect(this.analyser);
+    this.globalEqConnection = connectGlobalEqualizer(ctx, this.masterOutputGain, this.analyser);
     this.analyser.connect(ctx.destination);
-    this.masterOutputGain.connect(this.recordingDestination);
+    // Recording receives the post-EQ signal too, matching the live output.
+    this.analyser.connect(this.recordingDestination);
     this.setDelayTimeFromBpm();
     this.setFilterMix(this.filterMix);
     this.setFlangerMix(this.flangerMix);
@@ -485,6 +488,8 @@ export class MicEngine {
       this.micStream.getTracks().forEach((track) => track.stop());
       this.micStream = null;
     }
+    this.globalEqConnection?.dispose();
+    this.globalEqConnection = null;
     if (this.ctx && this.ctx.state !== 'closed') {
       this.ctx.close().catch(() => {});
       this.ctx = null;

@@ -1,5 +1,6 @@
 import { AudioItem, EqualizerBand } from '../types';
 import { DEFAULT_EQ_BANDS, BUILTIN_PRESETS } from './EqualizerPresets';
+import { profileFromBands, setGlobalEqualizerProfile } from './GlobalEqualizer';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -79,6 +80,7 @@ export class AudioEngine {
     this.crossfadeAudioElement.preload = 'auto';
     this.crossfadeAudioElement.crossOrigin = 'anonymous';
     this.attachPrimaryListeners();
+    this.publishGlobalEqProfile();
   }
 
   private attachPrimaryListeners(): void {
@@ -448,6 +450,7 @@ export class AudioEngine {
   setEqEnabled(enabled: boolean): void {
     this.isEqEnabled = enabled;
     this.applyAllFilters();
+    this.publishGlobalEqProfile();
   }
 
   getBands(): EqualizerBand[] {
@@ -464,6 +467,7 @@ export class AudioEngine {
       const target = this.isEqEnabled ? band.currentLevelDb : 0;
       this.eqFilters[bandId].gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+    this.publishGlobalEqProfile();
   }
 
   get currentPreset(): string {
@@ -484,6 +488,7 @@ export class AudioEngine {
         }
       }
     });
+    this.publishGlobalEqProfile();
   }
 
   applyCustomBands(values: number[]): void {
@@ -497,6 +502,7 @@ export class AudioEngine {
         }
       }
     });
+    this.publishGlobalEqProfile();
   }
 
   get bassBoostLevel(): number {
@@ -509,6 +515,7 @@ export class AudioEngine {
       const target = this.isEqEnabled ? this.bassBoost * 12 : 0;
       this.bassBoostFilter.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+    this.publishGlobalEqProfile();
   }
 
   get trebleBoostLevel(): number {
@@ -521,6 +528,7 @@ export class AudioEngine {
       const target = this.isEqEnabled ? this.trebleBoost * 12 : 0;
       this.trebleBoostFilter.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+    this.publishGlobalEqProfile();
   }
 
   get currentPreampDb(): number {
@@ -533,6 +541,17 @@ export class AudioEngine {
       const gainMultiplier = this.isEqEnabled ? Math.pow(10, this.preampDb / 20) : 1;
       this.preampGain.gain.setTargetAtTime(gainMultiplier, this.ctx.currentTime, 0.05);
     }
+    this.publishGlobalEqProfile();
+  }
+
+  private publishGlobalEqProfile(): void {
+    setGlobalEqualizerProfile(profileFromBands(
+      this.bands,
+      this.isEqEnabled,
+      this.bassBoost,
+      this.trebleBoost,
+      this.preampDb,
+    ));
   }
 
   private applyAllFilters(): void {

@@ -1,4 +1,5 @@
 import { AudioItem } from '../types';
+import { connectGlobalEqualizer, GlobalEqualizerConnection } from './GlobalEqualizer';
 
 export type DJEffectType =
   | 'none'
@@ -37,6 +38,7 @@ export class DJDeckEngine {
 
   private deckGain: GainNode | null = null;
   private fxSendGain: GainNode | null = null;
+  private globalEqConnection: GlobalEqualizerConnection | null = null;
   private crossfadeGain: GainNode | null = null;
   private filterNode: BiquadFilterNode | null = null;
   private delayNode: DelayNode | null = null;
@@ -252,7 +254,11 @@ export class DJDeckEngine {
     this.reverbWetGain.connect(this.deckGain);
 
     this.deckGain.connect(this.crossfadeGain);
-    this.crossfadeGain.connect(this.analyser);
+    // The shared 10-band EQ is after both deck FX and the DJ crossfader so
+    // scratches, echo/reverb returns and both channels respond to the same EQ.
+    if (this.crossfadeGain && this.analyser) {
+      this.globalEqConnection = connectGlobalEqualizer(ctx, this.crossfadeGain, this.analyser);
+    }
     this.analyser.connect(ctx.destination);
   }
 
