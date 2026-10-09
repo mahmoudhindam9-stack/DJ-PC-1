@@ -44,6 +44,14 @@ export const App: React.FC = () => {
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVolume] = useState(0.85);
+  const [crossfader, setCrossfader] = useState(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('dj-main-player-crossfader'));
+      return Number.isFinite(saved) && saved >= 0 && saved <= 1 ? saved : 0;
+    } catch {
+      return 0;
+    }
+  });
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('NORMAL');
   const shuffleBagRef = useRef<string[]>([]);
   const shuffleHistoryRef = useRef<string[]>([]);
@@ -62,6 +70,31 @@ export const App: React.FC = () => {
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   const themeColors = THEMES[currentTheme] || THEMES.DJ_BLUE;
+
+  const crossfadeTrack: AudioItem | null = (() => {
+    if (!currentSong) return null;
+    const currentIndex = queue.findIndex((track) => track.id === currentSong.id);
+    if (currentIndex >= 0 && queue.length > 1) return queue[(currentIndex + 1) % queue.length] || null;
+    return queue.find((track) => track.id !== currentSong.id)
+      || library.find((track) => track.id !== currentSong.id)
+      || null;
+  })();
+
+  useEffect(() => {
+    mainAudioEngine.setCrossfader(crossfader, false);
+  }, [crossfader]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('dj-main-player-crossfader', String(crossfader));
+    } catch {
+      // Local storage can be unavailable in restricted browser contexts.
+    }
+  }, [crossfader]);
+
+  useEffect(() => {
+    mainAudioEngine.loadCrossfadeTrack(crossfadeTrack);
+  }, [crossfadeTrack?.id, crossfadeTrack?.uri]);
 
   // Load persistence (saved songs, playlists, settings)
   useEffect(() => {
@@ -345,6 +378,17 @@ export const App: React.FC = () => {
   const handleVolumeChange = (v: number) => {
     setVolume(v);
     mainAudioEngine.setVolume(v);
+  };
+
+  const handleCrossfaderChange = (value: number) => {
+    const nextValue = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+    mainAudioEngine.setCrossfader(nextValue);
+    setCrossfader(nextValue);
+    try {
+      window.localStorage.setItem('dj-main-player-crossfader', String(nextValue));
+    } catch {
+      // Optional persistence.
+    }
   };
 
   const handleTogglePlaybackMode = () => {
@@ -786,8 +830,11 @@ export const App: React.FC = () => {
         durationMs={durationMs}
         playbackMode={playbackMode}
         volume={volume}
+        crossfader={crossfader}
+        crossfadeTrack={crossfadeTrack}
         themeColors={themeColors}
         isArabic={isArabic}
+        onCrossfaderChange={handleCrossfaderChange}
         onPlayPause={handlePlayPause}
         onNext={handleNext}
         onPrev={handlePrev}

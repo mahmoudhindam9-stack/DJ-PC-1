@@ -5,6 +5,13 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private audioElement: HTMLAudioElement;
   private sourceNode: MediaElementAudioSourceNode | null = null;
+  private crossfadeAudioElement: HTMLAudioElement;
+  private crossfadeSourceNode: MediaElementAudioSourceNode | null = null;
+  private currentTrackGain: GainNode | null = null;
+  private crossfadeTrackGain: GainNode | null = null;
+  private crossfadePosition = 0;
+  private crossfadeTrackId: string | null = null;
+  private crossfadeTrackUri: string | null = null;
 
   // Processing chain nodes
   private preampGain: GainNode | null = null;
@@ -35,6 +42,10 @@ export class AudioEngine {
     this.audioElement = new Audio();
     this.audioElement.preload = 'auto';
     this.audioElement.crossOrigin = 'anonymous';
+
+    this.crossfadeAudioElement = new Audio();
+    this.crossfadeAudioElement.preload = 'auto';
+    this.crossfadeAudioElement.crossOrigin = 'anonymous';
 
     this.audioElement.addEventListener('timeupdate', () => {
       const cur = this.audioElement.currentTime * 1000;
@@ -73,6 +84,11 @@ export class AudioEngine {
   private setupAudioGraph(ctx: AudioContext) {
     try {
       this.sourceNode = ctx.createMediaElementSource(this.audioElement);
+      this.crossfadeSourceNode = ctx.createMediaElementSource(this.crossfadeAudioElement);
+      this.currentTrackGain = ctx.createGain();
+      this.currentTrackGain.gain.value = 1;
+      this.crossfadeTrackGain = ctx.createGain();
+      this.crossfadeTrackGain.gain.value = 0;
       this.preampGain = ctx.createGain();
       this.preampGain.gain.value = Math.pow(10, this.preampDb / 20);
 
@@ -117,11 +133,13 @@ export class AudioEngine {
       this.analyser.fftSize = 128;
       this.analyser.smoothingTimeConstant = 0.8;
 
-      // Connect graph:
-      // source -> preamp -> eqFilters[0..9] -> bassBoost -> trebleBoost -> [panner] -> masterGain -> analyser -> destination
-      let current: AudioNode = this.sourceNode;
-      current.connect(this.preampGain);
-      current = this.preampGain;
+      // Both tracks feed the same EQ/master chain through independent crossfader gains.
+      this.sourceNode.connect(this.currentTrackGain);
+      this.crossfadeSourceNode.connect(this.crossfadeTrackGain);
+      this.currentTrackGain.connect(this.preampGain);
+      this.crossfadeTrackGain.connect(this.preampGain);
+
+      let current: AudioNode = this.preampGain;
 
       for (const f of this.eqFilters) {
         current.connect(f);
@@ -150,8 +168,70 @@ export class AudioEngine {
   // --- PLAYBACK ---
   async loadTrack(item: AudioItem): Promise<void> {
     this.ensureAudioContext();
+    this.crossfadeAudioElement.pause();
     this.audioElement.src = item.uri;
     this.audioElement.load();
+    this.applyCrossfaderGains();
+  }
+
+  /** Load the next queued song on a second source for true, overlapping crossfades. */
+  loadCrossfadeTrack(item: AudioItem | null): void {
+    if (!item) {
+      this.crossfadeAudioElement.pause();
+      this.crossfadeAudioElement.removeAttribute('src');
+      this.crossfadeAudioElement.load();
+      this.crossfadeTrackId = null;
+      this.crossfadeTrackUri = null;
+      this.applyCrossfaderGains();
+      return;
+    }
+    if (this.crossfadeTrackId === item.id && this.crossfadeTrackUri === item.uri) return;
+
+    const shouldResumePreview = this.crossfadePosition > 0 && this.isPlaying;
+    this.crossfadeAudioElement.pause();
+    this.ensureAudioContext();
+    this.crossfadeTrackId = item.id;
+    this.crossfadeTrackUri = item.uri;
+    this.crossfadeAudioElement.src = item.uri;
+    this.crossfadeAudioElement.load();
+    this.applyCrossfaderGains();
+    if (shouldResumePreview) void this.startCrossfadePreview();
+  }
+
+  get crossfaderValue(): number {
+    return this.crossfadePosition;
+  }
+
+  setCrossfader(value: number, startPreview = true): void {
+    this.crossfadePosition = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+    this.applyCrossfaderGains();
+    if (this.crossfadePosition <= 0.001) {
+      this.crossfadeAudioElement.pause();
+      return;
+    }
+    // A real drag starts the preview; state restoration changes gain without autoplay.
+    if (startPreview && this.crossfadeAudioElement.src) void this.startCrossfadePreview();
+  }
+
+  private applyCrossfaderGains(): void {
+    const leftGain = Math.cos(this.crossfadePosition * Math.PI / 2);
+    const rightGain = Math.sin(this.crossfadePosition * Math.PI / 2);
+    if (this.currentTrackGain && this.ctx) {
+      this.currentTrackGain.gain.setTargetAtTime(leftGain, this.ctx.currentTime, 0.015);
+    }
+    if (this.crossfadeTrackGain && this.ctx) {
+      this.crossfadeTrackGain.gain.setTargetAtTime(rightGain, this.ctx.currentTime, 0.015);
+    }
+  }
+
+  private async startCrossfadePreview(): Promise<void> {
+    const context = this.ensureAudioContext();
+    try {
+      if (context.state === 'suspended') await context.resume();
+      await this.crossfadeAudioElement.play();
+    } catch (err) {
+      console.warn('Crossfade preview could not start:', err);
+    }
   }
 
   async play(): Promise<void> {
@@ -159,6 +239,9 @@ export class AudioEngine {
     try {
       if (context.state === 'suspended') await context.resume();
       await this.audioElement.play();
+      if (this.crossfaderPosition > 0.001 && this.crossfadeAudioElement.src) {
+        void this.startCrossfadePreview();
+      }
     } catch (err) {
       console.warn('Audio playback waiting for interaction:', err);
     }
@@ -166,6 +249,7 @@ export class AudioEngine {
 
   pause(): void {
     this.audioElement.pause();
+    this.crossfadeAudioElement.pause();
   }
 
   seekTo(positionMs: number): void {
