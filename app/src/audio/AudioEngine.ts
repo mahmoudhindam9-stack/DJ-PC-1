@@ -239,7 +239,7 @@ export class AudioEngine {
     try {
       if (context.state === 'suspended') await context.resume();
       await this.audioElement.play();
-      if (this.crossfaderPosition > 0.001 && this.crossfadeAudioElement.src) {
+      if (this.crossfadePosition > 0.001 && this.crossfadeAudioElement.src) {
         void this.startCrossfadePreview();
       }
     } catch (err) {
