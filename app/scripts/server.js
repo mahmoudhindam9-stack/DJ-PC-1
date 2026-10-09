@@ -938,10 +938,22 @@ async function handleApi(req, res) {
         return true;
       }
 
+      // Run a temporary copy: Windows may refuse to rename APP_DIR while it is a
+      // running process's current directory, which previously blocked self-update.
+      const updaterLaunchDir = path.join(process.env.TEMP || process.env.TMP || process.cwd(), 'DJ-Desktop-Updater-' + randomUUID());
+      fs.mkdirSync(updaterLaunchDir, { recursive: true });
+      const updaterLaunchScript = path.join(updaterLaunchDir, 'apply-update.ps1');
+      try {
+        fs.copyFileSync(updaterScript, updaterLaunchScript);
+      } catch (error) {
+        fs.rmSync(updaterLaunchDir, { recursive: true, force: true });
+        throw new Error('Could not prepare the update installer: ' + (error instanceof Error ? error.message : String(error)));
+      }
+
       const child = spawn('powershell.exe', [
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updaterScript,
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updaterLaunchScript,
         '-PackageUrl', update.assetUrl, '-AppDir', APP_DIR, '-TargetVersion', update.latestVersion, '-ServerPid', String(process.pid),
-      ], { detached: true, stdio: 'ignore', windowsHide: true });
+      ], { cwd: updaterLaunchDir, detached: true, stdio: 'ignore', windowsHide: true });
       child.unref();
       sendJson(res, 200, { ok: true, data: { accepted: true, message: 'The update is accepted; the app will reopen after installation.' } });
       setTimeout(() => { server.close(() => process.exit(0)); }, 1200);
