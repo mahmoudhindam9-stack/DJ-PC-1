@@ -62,10 +62,11 @@ export class AudioEngine {
   };
 
   private readonly primaryEndedHandler = () => {
-    if (this.crossfadeInProgress && this.standbyTrack) {
+    if (this.crossfadeInProgress && this.standbyTrack && !this.crossfadeAudioElement.paused) {
       this.finishCrossfade();
       return;
     }
+    if (this.crossfadeInProgress) this.cancelCrossfade();
     this.onEndedListeners.forEach((fn) => fn());
   };
 
@@ -309,7 +310,16 @@ export class AudioEngine {
       this.cancelCrossfade();
       return;
     }
-    if (this.crossfadeInProgress && this.standbyTrack) this.scheduleCrossfadeRamp(0);
+    if (!this.crossfadeInProgress || !this.standbyTrack) return;
+    if (!this.isPlaying) {
+      // The current track may have been paused while the standby player was loading.
+      // Keep the pending transition ready to resume, but do not run a timer while paused.
+      this.crossfadeAudioElement.pause();
+      this.setGainImmediately(this.currentTrackGain, 1);
+      this.setGainImmediately(this.crossfadeTrackGain, 0);
+      return;
+    }
+    this.scheduleCrossfadeRamp(0);
   }
 
   private scheduleCrossfadeRamp(progress: number): void {
