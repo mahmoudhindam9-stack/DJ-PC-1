@@ -147,4 +147,8 @@ catch {
 finally {
     Remove-Item -LiteralPath $partialDownloadPath -Force -ErrorAction SilentlyContinue
     if (Test-Path $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    $bootstrapDir = Split-Path -Parent $PSCommandPath
+    if ((Split-Path -Leaf $bootstrapDir) -like 'DJ-Desktop-Updater-*') {
+        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
