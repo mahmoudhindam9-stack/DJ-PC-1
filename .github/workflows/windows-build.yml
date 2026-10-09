@@ -73,6 +73,9 @@ jobs:
             'app/scripts/apply-update.ps1',
             'app/scripts/set-window-always-on-top.ps1',
             'app/src/services/UpdateService.ts',
+            'app/src/services/LocalMusicService.ts',
+            'app/src/components/screens/AIMusicStudioScreen.tsx',
+            'app/scripts/setup-local-music-ai.ps1',
             'app/src/components/screens/OnlineMusicScreen.tsx',
             'app/src/services/OnlineMusicService.ts',
             'app/dist/index.html'

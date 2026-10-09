@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,12 @@ const PORT = Number(process.argv[2] || process.env.PORT || 3000);
 const ALBUMATY_BASE = 'https://www.albumaty.com';
 const UPDATE_REPOSITORY = 'mahmoudhindam9-stack/DJ-PC-1';
 const REQUEST_TIMEOUT_MS = 15000;
+const ACE_STEP_BASE_URL = 'http://127.0.0.1:8001';
+const LOCAL_MUSIC_DIR = path.join(
+  process.env.LOCALAPPDATA || path.join(process.env.HOME || process.cwd(), '.local'),
+  'DJ Desktop Studio',
+  'Generated Music',
+);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=UTF-8',
@@ -502,6 +509,29 @@ async function getLatestReleaseInfo() {
   };
 }
 
+async function getAceStepHealth() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(ACE_STEP_BASE_URL + '/health', {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return { ready: false, service: 'ACE-Step 1.5' };
+    const payload = await response.json();
+    const ready = payload?.code === 200 || payload?.data?.status === 'ok';
+    return {
+      ready,
+      service: String(payload?.data?.service || 'ACE-Step 1.5'),
+      version: String(payload?.data?.version || ''),
+    };
+  } catch {
+    return { ready: false, service: 'ACE-Step 1.5' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function sendJson(res, statusCode, data) {
   const payload = JSON.stringify(data);
   res.writeHead(statusCode, {
@@ -577,110 +607,287 @@ async function handleApi(req, res) {
     }
 
 
-    if (requestUrl.pathname === '/api/lyria/generate' && req.method === 'POST') {
-      const body = await readJsonBody(req, 20000);
-      const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-      const model = body.model === 'lyria-3.5' || body.model === 'lyria-3-clip-preview' ? body.model : '';
+    if (requestUrl.pathname === '/api/local-music/health' && req.method === 'GET') {
+      const health = await getAceStepHealth();
+      sendJson(res, 200, { ok: true, data: health });
+      return true;
+    }
 
-      if (!apiKey || apiKey.length > 512) {
-        sendJson(res, 400, { ok: false, error: 'Enter a valid Gemini API key to use Lyria.' });
+    if (requestUrl.pathname === '/api/local-music/start' && req.method === 'POST') {
+      if (process.platform !== 'win32') {
+        sendJson(res, 409, { ok: false, error: 'The one-click local AI setup is currently available in the Windows package.' });
         return true;
       }
-      if (!model) {
-        sendJson(res, 400, { ok: false, error: 'Choose a supported Lyria model.' });
+      const health = await getAceStepHealth();
+      if (health.ready) {
+        sendJson(res, 200, { ok: true, data: { launched: false, ready: true } });
         return true;
       }
-      if (prompt.length < 12 || prompt.length > 12000) {
-        sendJson(res, 400, { ok: false, error: 'The music prompt must contain between 12 and 12,000 characters.' });
+      const setupScript = path.join(APP_DIR, 'scripts', 'setup-local-music-ai.ps1');
+      if (!fs.existsSync(setupScript)) {
+        sendJson(res, 500, { ok: false, error: 'The local AI setup script is missing. Download the latest complete Windows package.' });
         return true;
       }
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 180000);
-      let upstream;
       try {
-        upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+        const child = spawn('powershell.exe', [
+          '-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', setupScript,
+        ], { detached: true, stdio: 'ignore', windowsHide: false });
+        child.once('error', (error) => console.warn('Could not launch ACE-Step setup:', error));
+        child.unref();
+        sendJson(res, 200, {
+          ok: true,
+          data: { launched: true, ready: false, message: 'Setup is running in a separate PowerShell window.' },
+        });
+      } catch (error) {
+        sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : 'Could not start the local AI setup.' });
+      }
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/local-music/generate' && req.method === 'POST') {
+      const health = await getAceStepHealth();
+      if (!health.ready) {
+        sendJson(res, 503, { ok: false, error: 'ACE-Step is not running yet. Use “Set up / start local model” and wait for it to become ready.' });
+        return true;
+      }
+
+      const body = await readJsonBody(req, 20000);
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+      const lyrics = typeof body.lyrics === 'string' ? body.lyrics.trim() : '';
+      const vocalMode = body.vocalMode === 'instrumental' || body.vocalMode === 'generated' || body.vocalMode === 'custom'
+        ? body.vocalMode
+        : 'instrumental';
+      const bpm = Math.max(30, Math.min(300, Math.round(Number(body.bpm) || 120)));
+      const durationSeconds = Math.max(10, Math.min(600, Math.round(Number(body.durationSeconds) || 120)));
+
+      if (prompt.length < 12 || prompt.length > 12000) {
+        sendJson(res, 400, { ok: false, error: 'The music description must contain between 12 and 12,000 characters.' });
+        return true;
+      }
+      if (lyrics.length > 12000) {
+        sendJson(res, 400, { ok: false, error: 'Lyrics are too long. Keep them under 12,000 characters.' });
+        return true;
+      }
+
+      const requestController = new AbortController();
+      const requestTimer = setTimeout(() => requestController.abort(), 45000);
+      let taskResponse;
+      try {
+        taskResponse = await fetch(ACE_STEP_BASE_URL + '/release_task', {
           method: 'POST',
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-            'User-Agent': 'DJ Desktop Studio Lyria Music Studio',
-          },
+          signal: requestController.signal,
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({
-            model,
-            input: prompt,
-            response_format: { type: 'audio' },
+            prompt,
+            lyrics,
+            bpm,
+            audio_duration: durationSeconds,
+            audio_format: 'mp3',
+            thinking: true,
+            use_format: vocalMode === 'custom',
+            sample_mode: vocalMode === 'generated',
+            sample_query: vocalMode === 'generated' ? prompt : '',
+            task_type: 'text2music',
           }),
         });
       } catch (error) {
         const message = error && error.name === 'AbortError'
-          ? 'Lyria took longer than 3 minutes. Try a shorter clip or simpler prompt.'
-          : 'Could not reach the Gemini API. Check your internet connection.';
-        sendJson(res, 504, { ok: false, error: message });
+          ? 'ACE-Step did not accept the task in time.'
+          : 'Could not connect to the local ACE-Step engine.';
+        sendJson(res, 503, { ok: false, error: message });
         return true;
       } finally {
-        clearTimeout(timer);
+        clearTimeout(requestTimer);
       }
 
-      let result;
+      let taskPayload;
       try {
-        result = await upstream.json();
+        taskPayload = await taskResponse.json();
       } catch {
-        sendJson(res, 502, { ok: false, error: 'Gemini returned an invalid music-generation response.' });
+        sendJson(res, 502, { ok: false, error: 'ACE-Step returned an invalid task response.' });
+        return true;
+      }
+      if (!taskResponse.ok || taskPayload?.code >= 400 || taskPayload?.error) {
+        sendJson(res, 502, { ok: false, error: String(taskPayload?.error || 'ACE-Step could not queue the music generation task.').slice(0, 1000) });
+        return true;
+      }
+      const taskId = String(taskPayload?.data?.task_id || '');
+      if (!taskId || taskId.length > 160) {
+        sendJson(res, 502, { ok: false, error: 'ACE-Step did not return a valid task ID.' });
         return true;
       }
 
-      if (!upstream.ok) {
-        const upstreamMessage = String(result?.error?.message || result?.message || '');
-        const statusCode = [400, 401, 403, 429].includes(upstream.status) ? upstream.status : 502;
-        const fallback = upstream.status === 429
-          ? 'Lyria usage limit reached. Check your Gemini API quota and billing.'
-          : upstream.status === 403 || upstream.status === 401
-            ? 'Gemini rejected the API key or this model is not enabled for your project.'
-            : 'Lyria could not generate this track. Try editing the prompt.';
-        sendJson(res, statusCode, { ok: false, error: (upstreamMessage || fallback).slice(0, 1200) });
-        return true;
-      }
-
-      const interaction = result?.interaction || result;
-      const audio = interaction?.output_audio || interaction?.outputAudio || null;
-      let audioBase64 = audio && typeof audio.data === 'string' ? audio.data : '';
-      let lyrics = String(interaction?.output_text || interaction?.outputText || '').trim();
-      let mimeType = String(audio?.mime_type || audio?.mimeType || 'audio/mpeg');
-
-      if ((!audioBase64 || !lyrics) && Array.isArray(interaction?.steps)) {
-        const textBlocks = [];
-        for (const step of interaction.steps) {
-          if (step?.type !== 'model_output' || !Array.isArray(step.content)) continue;
-          for (const block of step.content) {
-            if (!audioBase64 && block?.type === 'audio' && typeof block.data === 'string') {
-              audioBase64 = block.data;
-              mimeType = String(block.mime_type || block.mimeType || mimeType);
-            } else if (block?.type === 'text' && typeof block.text === 'string') {
-              textBlocks.push(block.text);
-            }
-          }
+      const generationDeadline = Date.now() + 20 * 60 * 1000;
+      let outputItem = null;
+      while (Date.now() < generationDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1600));
+        const pollController = new AbortController();
+        const pollTimer = setTimeout(() => pollController.abort(), 30000);
+        let pollResponse;
+        try {
+          pollResponse = await fetch(ACE_STEP_BASE_URL + '/query_result', {
+            method: 'POST',
+            signal: pollController.signal,
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ task_id_list: [taskId] }),
+          });
+        } catch (error) {
+          if (error && error.name === 'AbortError') continue;
+          sendJson(res, 502, { ok: false, error: 'Lost connection to the local music engine while waiting for the song.' });
+          return true;
+        } finally {
+          clearTimeout(pollTimer);
         }
-        if (!lyrics && textBlocks.length) lyrics = textBlocks.join('\n\n');
+
+        let pollPayload;
+        try {
+          pollPayload = await pollResponse.json();
+        } catch {
+          continue;
+        }
+        if (!pollResponse.ok || pollPayload?.error || pollPayload?.code >= 500) {
+          sendJson(res, 502, { ok: false, error: String(pollPayload?.error || 'Local generation status check failed.').slice(0, 1000) });
+          return true;
+        }
+
+        const rows = Array.isArray(pollPayload?.data) ? pollPayload.data : [];
+        const row = rows.find((entry) => String(entry?.task_id) === taskId) || rows[0];
+        if (!row) continue;
+
+        const status = Number(row.status);
+        if (status === 2) {
+          let detail = String(row.error || 'ACE-Step marked this music generation as failed.');
+          try {
+            const parsed = typeof row.result === 'string' ? JSON.parse(row.result) : row.result;
+            const failed = Array.isArray(parsed) ? parsed.find((entry) => entry?.error) : parsed;
+            if (failed?.error) detail = String(failed.error);
+          } catch { /* Keep the task-level error message. */ }
+          sendJson(res, 502, { ok: false, error: detail.slice(0, 1200) });
+          return true;
+        }
+        if (status !== 1) continue;
+
+        let resultItems;
+        try {
+          resultItems = typeof row.result === 'string' ? JSON.parse(row.result) : row.result;
+        } catch {
+          resultItems = [];
+        }
+        if (!Array.isArray(resultItems)) resultItems = resultItems ? [resultItems] : [];
+        outputItem = resultItems.find((item) => item && typeof item.file === 'string' && Number(item.status || 1) === 1)
+          || resultItems.find((item) => item && typeof item.file === 'string');
+        if (!outputItem) {
+          sendJson(res, 502, { ok: false, error: 'ACE-Step reported success but did not return a playable audio file.' });
+          return true;
+        }
+        break;
       }
 
-      if (!audioBase64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(audioBase64)) {
-        sendJson(res, 502, { ok: false, error: 'Lyria returned no playable audio. Try generating again.' });
+      if (!outputItem) {
+        sendJson(res, 504, { ok: false, error: 'Local music generation exceeded 20 minutes. Check the ACE-Step PowerShell window and try again.' });
         return true;
       }
 
+      let outputAudioUrl;
+      try {
+        outputAudioUrl = new URL(String(outputItem.file), ACE_STEP_BASE_URL);
+      } catch {
+        sendJson(res, 502, { ok: false, error: 'ACE-Step returned an invalid audio URL.' });
+        return true;
+      }
+      if (outputAudioUrl.origin !== ACE_STEP_BASE_URL || outputAudioUrl.pathname !== '/v1/audio') {
+        sendJson(res, 502, { ok: false, error: 'ACE-Step returned an unsupported audio file URL.' });
+        return true;
+      }
+
+      const audioController = new AbortController();
+      const audioTimer = setTimeout(() => audioController.abort(), 180000);
+      let audioResponse;
+      try {
+        audioResponse = await fetch(outputAudioUrl, { signal: audioController.signal });
+      } catch {
+        sendJson(res, 502, { ok: false, error: 'Could not retrieve the generated audio from ACE-Step.' });
+        return true;
+      } finally {
+        clearTimeout(audioTimer);
+      }
+      if (!audioResponse.ok) {
+        sendJson(res, 502, { ok: false, error: 'ACE-Step generated a task but its audio file could not be downloaded.' });
+        return true;
+      }
+
+      let audioBuffer;
+      try {
+        audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+      } catch {
+        sendJson(res, 502, { ok: false, error: 'Could not read the generated audio file.' });
+        return true;
+      }
+      if (audioBuffer.length < 512 || audioBuffer.length > 600 * 1024 * 1024) {
+        sendJson(res, 502, { ok: false, error: 'ACE-Step returned an audio file with an invalid size.' });
+        return true;
+      }
+
+      let fileName;
+      try {
+        fs.mkdirSync(LOCAL_MUSIC_DIR, { recursive: true });
+        fileName = 'ace-step-' + randomUUID() + '.mp3';
+        fs.writeFileSync(path.join(LOCAL_MUSIC_DIR, fileName), audioBuffer);
+      } catch {
+        sendJson(res, 500, { ok: false, error: 'Could not save the generated audio to your local music folder.' });
+        return true;
+      }
+
+      const resultDuration = Number(outputItem?.metas?.duration);
       sendJson(res, 200, {
         ok: true,
         data: {
-          model,
-          audioBase64,
-          mimeType: mimeType.startsWith('audio/') ? mimeType : 'audio/mpeg',
-          lyrics,
+          audioUrl: '/api/local-music/audio/' + fileName,
+          lyrics: String(outputItem.lyrics || lyrics || ''),
+          durationSeconds: Number.isFinite(resultDuration) && resultDuration >= 10 ? resultDuration : durationSeconds,
+          bpm: Number(outputItem?.metas?.bpm) || bpm,
+          model: String(outputItem.dit_model || 'ACE-Step 1.5'),
           generatedAt: new Date().toISOString(),
         },
       });
+      return true;
+    }
+
+    if (requestUrl.pathname.startsWith('/api/local-music/audio/') && req.method === 'GET') {
+      const fileName = requestUrl.pathname.slice('/api/local-music/audio/'.length);
+      if (!/^ace-step-[a-f0-9-]{36}\.mp3$/i.test(fileName)) {
+        sendJson(res, 400, { ok: false, error: 'Invalid local audio filename.' });
+        return true;
+      }
+      const localAudioPath = path.join(LOCAL_MUSIC_DIR, fileName);
+      if (!fs.existsSync(localAudioPath)) {
+        sendJson(res, 404, { ok: false, error: 'The saved local AI audio file was not found.' });
+        return true;
+      }
+      const stat = fs.statSync(localAudioPath);
+      const range = req.headers.range;
+      const rangeMatch = typeof range === 'string' ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'no-store');
+      if (rangeMatch) {
+        const start = rangeMatch[1] ? Number(rangeMatch[1]) : 0;
+        const requestedEnd = rangeMatch[2] ? Number(rangeMatch[2]) : stat.size - 1;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start < 0 || start >= stat.size || requestedEnd < start) {
+          res.writeHead(416, { 'Content-Range': 'bytes */' + stat.size });
+          res.end();
+          return true;
+        }
+        const end = Math.min(requestedEnd, stat.size - 1);
+        res.writeHead(206, {
+          'Content-Range': 'bytes ' + start + '-' + end + '/' + stat.size,
+          'Content-Length': end - start + 1,
+        });
+        fs.createReadStream(localAudioPath, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, { 'Content-Length': stat.size });
+        fs.createReadStream(localAudioPath).pipe(res);
+      }
       return true;
     }
 
