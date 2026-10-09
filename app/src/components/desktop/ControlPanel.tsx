@@ -3,6 +3,7 @@ import {
   CalendarDays, Clock3, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain,
   CloudSnow, Droplets, LocateFixed, MapPin, Moon, Music2, Pause, Pin, Play,
   RefreshCw, SkipBack, SkipForward, Sun, Thermometer, Volume2, Wind,
+  type LucideIcon,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTauri } from '@tauri-apps/api/core';
@@ -74,7 +75,7 @@ function weatherLabel(code: number, isArabic: boolean): string {
   return pair[isArabic ? 1 : 0];
 }
 
-function weatherIconForCode(code: number, isDay = true): React.ComponentType<{ className?: string }> {
+function weatherIconForCode(code: number, isDay = true): LucideIcon {
   if (code === 0 || code === 1) return isDay ? Sun : Moon;
   if (code === 45 || code === 48) return CloudFog;
   if (code === 51 || code === 53 || code === 55) return CloudDrizzle;
