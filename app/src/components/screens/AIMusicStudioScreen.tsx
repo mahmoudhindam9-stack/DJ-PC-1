@@ -21,15 +21,12 @@ const MOODS = ['Energetic', 'Uplifting', 'Dark', 'Romantic', 'Dreamy', 'Epic', '
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const binary = atob(base64);
-  const chunks: Uint8Array[] = [];
-  const chunkSize = 32768;
-  for (let offset = 0; offset < binary.length; offset += chunkSize) {
-    const end = Math.min(binary.length, offset + chunkSize);
-    const bytes = new Uint8Array(end - offset);
-    for (let index = offset; index < end; index += 1) bytes[index - offset] = binary.charCodeAt(index);
-    chunks.push(bytes);
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
   }
-  return new Blob(chunks, { type: mimeType || 'audio/mpeg' });
+  return new Blob([buffer], { type: mimeType || 'audio/mpeg' });
 }
 
 export const AIMusicStudioScreen: React.FC<AIMusicStudioScreenProps> = ({
