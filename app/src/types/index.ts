@@ -117,15 +117,36 @@ export interface ThemeColors {
   isDark: boolean;
 }
 
-export type MicFilterType = 
+export type MicFilterType =
   | 'NONE'
+  | 'NORMAL'
+  | 'STUDIO_REVERB'
   | 'WARM'
   | 'BRIGHT'
   | 'TELEPHONE'
   | 'ROBOT'
   | 'RADIO'
   | 'CLUB'
-  | 'MEGAPHONE';
+  | 'MEGAPHONE'
+  | 'KID'
+  | 'CHIPMUNK'
+  | 'SMALL_WOMAN'
+  | 'OLD_WOMAN'
+  | 'OLD_MAN'
+  | 'GIANT'
+  | 'MONSTER'
+  | 'CHORUS'
+  | 'TREMOLO'
+  | 'BASS_BOOST';
+
+export type MicVoiceEffectType =
+  | 'NONE'
+  | 'WOMAN'
+  | 'KID'
+  | 'CHIPMUNK'
+  | 'MONSTER'
+  | 'DARK_DEMON'
+  | 'GIANT_BASS';
 
 export type BeatFxDivision = '1/1' | '1/2' | '1/4' | '1/8' | '3/4';
 

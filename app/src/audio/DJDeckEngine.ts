@@ -36,6 +36,7 @@ export class DJDeckEngine {
   private sourceNode: MediaElementAudioSourceNode | null = null;
 
   private deckGain: GainNode | null = null;
+  private fxSendGain: GainNode | null = null;
   private crossfadeGain: GainNode | null = null;
   private filterNode: BiquadFilterNode | null = null;
   private delayNode: DelayNode | null = null;
@@ -162,6 +163,10 @@ export class DJDeckEngine {
     this.deckGain = ctx.createGain();
     this.deckGain.gain.value = this.volume;
 
+    // Independent post-DSP FX send keeps wet returns on the same deck output path.
+    this.fxSendGain = ctx.createGain();
+    this.fxSendGain.gain.value = 0.92;
+
     this.crossfadeGain = ctx.createGain();
     this.crossfadeGain.gain.value = this.crossfadeVolume;
 
@@ -224,7 +229,7 @@ export class DJDeckEngine {
     this.delayLfo.start();
 
     this.reverbNode = ctx.createConvolver();
-    this.reverbNode.buffer = this.createImpulseResponse(ctx, 2.4, 2.7);
+    this.reverbNode.buffer = this.createImpulseResponse(ctx, 3.1, 2.15);
     this.reverbWetGain = ctx.createGain();
     this.reverbWetGain.gain.value = 0;
 
@@ -233,15 +238,16 @@ export class DJDeckEngine {
     this.filterNode.connect(this.waveshaperNode);
     this.waveshaperNode.connect(this.compressorNode);
     this.compressorNode.connect(this.deckGain);
+    this.compressorNode.connect(this.fxSendGain);
 
-    // Effect returns: these were previously instantiated without being connected to output.
-    this.sourceNode.connect(this.delayNode);
+    // Send the post-filter, post-saturation signal into the effect returns.
+    this.fxSendGain.connect(this.delayNode);
     this.delayNode.connect(this.delayFeedback);
     this.delayFeedback.connect(this.delayNode);
     this.delayNode.connect(this.delayWetGain);
     this.delayWetGain.connect(this.deckGain);
 
-    this.sourceNode.connect(this.reverbNode);
+    this.fxSendGain.connect(this.reverbNode);
     this.reverbNode.connect(this.reverbWetGain);
     this.reverbWetGain.connect(this.deckGain);
 
@@ -637,9 +643,13 @@ export class DJDeckEngine {
       const isDelay = this.activeEffect === 'fx_delay';
       const isFlanger = this.activeEffect === 'fx_flanger';
       const isPhaser = this.activeEffect === 'fx_phaser';
-      const delayBase = isDelay ? 0.08 + amount * 0.42 : isFlanger ? 0.006 : isPhaser ? 0.014 : 0.12;
-      const wet = isDelay ? amount * 0.55 : isFlanger ? amount * 0.42 : isPhaser ? amount * 0.32 : 0;
-      const feedback = isDelay ? amount * 0.62 : isFlanger ? amount * 0.3 : isPhaser ? amount * 0.18 : 0;
+      const delayBase = isDelay ? 0.16 + amount * 0.38 : isFlanger ? 0.006 : isPhaser ? 0.014 : 0.12;
+      // Keep the wet return clearly audible at normal knob positions.
+      const wet = isDelay ? amount * (0.55 + amount * 0.55)
+        : isFlanger ? amount * 0.75
+        : isPhaser ? amount * 0.62
+        : 0;
+      const feedback = isDelay ? amount * 0.72 : isFlanger ? amount * 0.34 : isPhaser ? amount * 0.22 : 0;
 
       this.delayNode.delayTime.setTargetAtTime(delayBase, now, 0.025);
       this.delayWetGain.gain.setTargetAtTime(wet, now, 0.025);
@@ -649,7 +659,7 @@ export class DJDeckEngine {
     }
 
     if (this.reverbWetGain) {
-      this.reverbWetGain.gain.setTargetAtTime(this.activeEffect === 'fx_reverb' ? amount * 0.68 : 0, now, 0.04);
+      this.reverbWetGain.gain.setTargetAtTime(this.activeEffect === 'fx_reverb' ? amount * 1.12 : 0, now, 0.025);
     }
   }
 

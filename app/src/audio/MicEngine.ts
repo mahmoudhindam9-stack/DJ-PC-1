@@ -1,4 +1,4 @@
-import { MicFilterType, BeatFxDivision } from '../types';
+import { MicFilterType, BeatFxDivision, MicVoiceEffectType } from '../types';
 
 export class MicEngine {
   private ctx: AudioContext | null = null;
@@ -7,15 +7,24 @@ export class MicEngine {
 
   // Nodes
   private inputGain: GainNode | null = null;
+  private voiceWorkletNode: AudioWorkletNode | null = null;
+  private filterDryGain: GainNode | null = null;
+  private filterWetGain: GainNode | null = null;
   private filterNode: BiquadFilterNode | null = null;
   private echoDelay: DelayNode | null = null;
+  private beatDelay: DelayNode | null = null;
+  private beatFeedback: GainNode | null = null;
+  private beatWetGain: GainNode | null = null;
   private echoFeedback: GainNode | null = null;
   private echoWetGain: GainNode | null = null;
   private reverbConvolver: ConvolverNode | null = null;
   private reverbWetGain: GainNode | null = null;
   private flangerDelay: DelayNode | null = null;
   private flangerWetGain: GainNode | null = null;
+  private flangerLfo: OscillatorNode | null = null;
+  private flangerLfoGain: GainNode | null = null;
   private masterOutputGain: GainNode | null = null;
+  private recordingDestination: MediaStreamAudioDestinationNode | null = null;
   private analyser: AnalyserNode | null = null;
 
   // MediaRecorder for recording processed vocals
@@ -27,12 +36,14 @@ export class MicEngine {
   public isMicEnabled = false;
   public isRecording = false;
   public recordingSeconds = 0;
-  public micVolume = 1.0; // 0 to 2.0
-  public echoLevel = 0.2; // 0 to 1.0
-  public reverbLevel = 0.25; // 0 to 1.0
-  public flangerMix = 0.0; // 0 to 1.0
-  public filterMix = 0.0; // 0 to 1.0
-  public currentFilter: MicFilterType = 'NONE';
+  public micVolume = 1.2; // 0 to 2.0, same range as Android
+  public echoLevel = 0.3; // 0 to 1.0
+  public reverbLevel = 0.28; // 0 to 1.0
+  public flangerMix = 0.35; // 0 to 1.0
+  public filterMix = 0.55; // 0 to 1.0
+  public currentFilter: MicFilterType = 'STUDIO_REVERB';
+  public currentVoiceEffect: MicVoiceEffectType = 'NONE';
+  public beatFxEnabled = true;
   public bpm = 120;
   public beatDivision: BeatFxDivision = '1/4';
   public voiceProcessing = true; // AEC & noise suppression
@@ -80,7 +91,7 @@ export class MicEngine {
         };
 
         this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
-        this.setupAudioChain(this.ctx, this.micStream);
+        await this.setupAudioChain(this.ctx, this.micStream);
         this.isMicEnabled = true;
         this.notify();
         return true;
@@ -98,67 +109,108 @@ export class MicEngine {
     }
   }
 
-  private setupAudioChain(ctx: AudioContext, stream: MediaStream) {
+  private async setupAudioChain(ctx: AudioContext, stream: MediaStream) {
     this.micSource = ctx.createMediaStreamSource(stream);
-
     this.inputGain = ctx.createGain();
     this.inputGain.gain.value = this.micVolume;
 
-    // Filter node for vocal character
+    // Android parity: character voices run in an AudioWorklet off the UI thread.
+    try {
+      if (ctx.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+        await ctx.audioWorklet.addModule(new URL('/mic-voice-worklet.js', window.location.href).toString());
+        this.voiceWorkletNode = new AudioWorkletNode(ctx, 'dj-mic-voice-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          channelCount: 1,
+          channelCountMode: 'explicit',
+        });
+        this.syncVoiceProcessor();
+      }
+    } catch (error) {
+      this.voiceWorkletNode = null;
+      console.warn('Mic character processor unavailable; using standard Web Audio filters:', error);
+    }
+
     this.filterNode = ctx.createBiquadFilter();
     this.applyVocalFilter();
+    this.filterDryGain = ctx.createGain();
+    this.filterWetGain = ctx.createGain();
+    this.filterDryGain.gain.value = 1 - this.filterMix;
+    this.filterWetGain.gain.value = this.filterMix;
 
-    // Echo / Delay chain
     this.echoDelay = ctx.createDelay(2.0);
-    this.setDelayTimeFromBpm();
-
+    this.echoDelay.delayTime.value = 0.24;
     this.echoFeedback = ctx.createGain();
-    this.echoFeedback.gain.value = 0.4;
+    this.echoFeedback.gain.value = 0.42;
     this.echoWetGain = ctx.createGain();
     this.echoWetGain.gain.value = this.echoLevel;
-
     this.echoDelay.connect(this.echoFeedback);
     this.echoFeedback.connect(this.echoDelay);
     this.echoDelay.connect(this.echoWetGain);
 
-    // Algorithmic impulse reverb
     this.reverbConvolver = ctx.createConvolver();
-    this.reverbConvolver.buffer = this.buildReverbImpulse(ctx, 1.8, 2.0);
+    this.reverbConvolver.buffer = this.buildReverbImpulse(ctx, 2.8, 2.35);
     this.reverbWetGain = ctx.createGain();
     this.reverbWetGain.gain.value = this.reverbLevel;
     this.reverbConvolver.connect(this.reverbWetGain);
 
-    // Flanger
+    this.beatDelay = ctx.createDelay(2.0);
+    this.beatFeedback = ctx.createGain();
+    this.beatFeedback.gain.value = 0.28;
+    this.beatWetGain = ctx.createGain();
+    this.beatWetGain.gain.value = this.beatFxEnabled ? 0.28 : 0;
+    this.beatDelay.connect(this.beatFeedback);
+    this.beatFeedback.connect(this.beatDelay);
+    this.beatDelay.connect(this.beatWetGain);
+
     this.flangerDelay = ctx.createDelay(0.05);
-    this.flangerDelay.delayTime.value = 0.003;
+    this.flangerDelay.delayTime.value = 0.006;
+    this.flangerLfo = ctx.createOscillator();
+    this.flangerLfo.frequency.value = 0.35;
+    this.flangerLfoGain = ctx.createGain();
+    this.flangerLfoGain.gain.value = this.flangerMix * 0.006;
+    this.flangerLfo.connect(this.flangerLfoGain);
+    this.flangerLfoGain.connect(this.flangerDelay.delayTime);
+    this.flangerLfo.start();
     this.flangerWetGain = ctx.createGain();
-    this.flangerWetGain.gain.value = this.flangerMix;
+    this.flangerWetGain.gain.value = this.flangerMix * 0.72;
     this.flangerDelay.connect(this.flangerWetGain);
 
-    // Output gain & analyser
     this.masterOutputGain = ctx.createGain();
     this.masterOutputGain.gain.value = 1.0;
-
     this.analyser = ctx.createAnalyser();
-    this.analyser.fftSize = 64;
+    this.analyser.fftSize = 128;
+    this.recordingDestination = ctx.createMediaStreamDestination();
 
-    // Graph routing:
-    // micSource -> inputGain -> filterNode
     this.micSource.connect(this.inputGain);
-    this.inputGain.connect(this.filterNode);
+    const voiceOutput: AudioNode = this.voiceWorkletNode || this.inputGain;
+    if (this.voiceWorkletNode) this.inputGain.connect(this.voiceWorkletNode);
+    voiceOutput.connect(this.filterDryGain);
+    voiceOutput.connect(this.filterNode);
+    this.filterNode.connect(this.filterWetGain);
+    this.filterDryGain.connect(this.masterOutputGain);
+    this.filterWetGain.connect(this.masterOutputGain);
 
-    // filterNode connects to Dry, Echo, Reverb, Flanger
-    this.filterNode.connect(this.masterOutputGain); // Dry
-    this.filterNode.connect(this.echoDelay); // Send to echo
-    this.filterNode.connect(this.reverbConvolver); // Send to reverb
-    this.filterNode.connect(this.flangerDelay); // Send to flanger
+    this.filterNode.connect(this.echoDelay);
+    this.filterNode.connect(this.reverbConvolver);
+    this.filterNode.connect(this.flangerDelay);
+    this.filterNode.connect(this.beatDelay);
 
     this.echoWetGain.connect(this.masterOutputGain);
     this.reverbWetGain.connect(this.masterOutputGain);
     this.flangerWetGain.connect(this.masterOutputGain);
+    this.beatWetGain.connect(this.masterOutputGain);
 
     this.masterOutputGain.connect(this.analyser);
     this.analyser.connect(ctx.destination);
+    this.masterOutputGain.connect(this.recordingDestination);
+    this.setDelayTimeFromBpm();
+    this.setFilterMix(this.filterMix);
+    this.setFlangerMix(this.flangerMix);
+    this.setEchoLevel(this.echoLevel);
+    this.setReverbLevel(this.reverbLevel);
+    this.setBeatFxEnabled(this.beatFxEnabled);
   }
 
   private buildReverbImpulse(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
@@ -177,31 +229,24 @@ export class MicEngine {
   }
 
   private setDelayTimeFromBpm() {
-    if (!this.echoDelay || !this.ctx) return;
+    if (!this.beatDelay || !this.ctx) return;
     const beatSeconds = 60 / this.bpm;
-    let multiplier = 0.25;
-    switch (this.beatDivision) {
-      case '1/1':
-        multiplier = 1.0;
-        break;
-      case '1/2':
-        multiplier = 0.5;
-        break;
-      case '1/4':
-        multiplier = 0.25;
-        break;
-      case '1/8':
-        multiplier = 0.125;
-        break;
-      case '3/4':
-        multiplier = 0.75;
-        break;
-    }
-    const delayTime = Math.max(0.05, Math.min(1.8, beatSeconds * multiplier));
-    this.echoDelay.delayTime.setTargetAtTime(delayTime, this.ctx.currentTime, 0.05);
+    const multiplierByDivision: Record<BeatFxDivision, number> = {
+      '1/1': 1, '1/2': 0.5, '1/4': 0.25, '1/8': 0.125, '3/4': 0.75,
+    };
+    const delayTime = Math.max(0.05, Math.min(1.8, beatSeconds * multiplierByDivision[this.beatDivision]));
+    this.beatDelay.delayTime.setTargetAtTime(delayTime, this.ctx.currentTime, 0.05);
+  }
+
+  private syncVoiceProcessor(): void {
+    this.voiceWorkletNode?.port.postMessage({
+      voiceEffect: this.currentVoiceEffect,
+      currentFilter: this.currentFilter,
+    });
   }
 
   public applyVocalFilter() {
+    this.syncVoiceProcessor();
     if (!this.filterNode || !this.ctx) return;
     const now = this.ctx.currentTime;
     switch (this.currentFilter) {
@@ -221,22 +266,43 @@ export class MicEngine {
         this.filterNode.Q.setTargetAtTime(2.5, now, 0.05);
         break;
       case 'ROBOT':
-      case 'RADIO':
         this.filterNode.type = 'peaking';
         this.filterNode.frequency.setTargetAtTime(2200, now, 0.05);
-        this.filterNode.gain.setTargetAtTime(8, now, 0.05);
+        this.filterNode.Q.setTargetAtTime(2.2, now, 0.05);
+        this.filterNode.gain.setTargetAtTime(5, now, 0.05);
+        break;
+      case 'RADIO':
+        this.filterNode.type = 'bandpass';
+        this.filterNode.frequency.setTargetAtTime(1800, now, 0.05);
+        this.filterNode.Q.setTargetAtTime(1.1, now, 0.05);
         break;
       case 'MEGAPHONE':
         this.filterNode.type = 'highpass';
         this.filterNode.frequency.setTargetAtTime(650, now, 0.05);
         break;
       case 'CLUB':
-        this.filterNode.type = 'peaking';
+        this.filterNode.type = 'lowshelf';
         this.filterNode.frequency.setTargetAtTime(120, now, 0.05);
-        this.filterNode.gain.setTargetAtTime(7, now, 0.05);
+        this.filterNode.gain.setTargetAtTime(6, now, 0.05);
         break;
+      case 'KID':
+      case 'CHIPMUNK':
+      case 'SMALL_WOMAN':
+      case 'OLD_WOMAN':
+      case 'OLD_MAN':
+      case 'GIANT':
+      case 'MONSTER':
+      case 'NORMAL':
+      case 'STUDIO_REVERB':
+      case 'CHORUS':
+      case 'TREMOLO':
+      case 'BASS_BOOST':
+      case 'NONE':
       default:
         this.filterNode.type = 'allpass';
+        this.filterNode.frequency.setTargetAtTime(1000, now, 0.05);
+        this.filterNode.Q.setTargetAtTime(0.0001, now, 0.05);
+        this.filterNode.gain.setTargetAtTime(0, now, 0.05);
         break;
     }
   }
@@ -268,7 +334,35 @@ export class MicEngine {
   setFlangerMix(mix: number) {
     this.flangerMix = Math.max(0, Math.min(1.0, mix));
     if (this.flangerWetGain && this.ctx) {
-      this.flangerWetGain.gain.setTargetAtTime(this.flangerMix, this.ctx.currentTime, 0.02);
+      this.flangerWetGain.gain.setTargetAtTime(this.flangerMix * 0.72, this.ctx.currentTime, 0.02);
+    }
+    if (this.flangerLfoGain && this.ctx) {
+      this.flangerLfoGain.gain.setTargetAtTime(this.flangerMix * 0.006, this.ctx.currentTime, 0.02);
+    }
+    this.notify();
+  }
+
+  setFilterMix(mix: number) {
+    this.filterMix = Math.max(0, Math.min(1, mix));
+    if (this.filterDryGain && this.filterWetGain && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.filterDryGain.gain.setTargetAtTime(1 - this.filterMix, now, 0.02);
+      this.filterWetGain.gain.setTargetAtTime(this.filterMix, now, 0.02);
+    }
+    this.syncVoiceProcessor();
+    this.notify();
+  }
+
+  setVoiceEffect(effect: MicVoiceEffectType) {
+    this.currentVoiceEffect = effect;
+    this.syncVoiceProcessor();
+    this.notify();
+  }
+
+  setBeatFxEnabled(enabled: boolean) {
+    this.beatFxEnabled = enabled;
+    if (this.beatWetGain && this.ctx) {
+      this.beatWetGain.gain.setTargetAtTime(enabled ? 0.28 : 0, this.ctx.currentTime, 0.02);
     }
     this.notify();
   }
@@ -317,7 +411,9 @@ export class MicEngine {
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
 
-      this.recorder = new MediaRecorder(this.micStream, { mimeType });
+      // Record the post-effects signal, not the raw microphone capture.
+      const recordingStream = this.recordingDestination?.stream || this.micStream;
+      this.recorder = new MediaRecorder(recordingStream, { mimeType });
       this.recorder.ondataavailable = (e) => {
         if (e.data.size > 0) this.recordedChunks.push(e.data);
       };
@@ -394,6 +490,26 @@ export class MicEngine {
       this.ctx = null;
     }
     this.micSource = null;
+    this.inputGain = null;
+    this.voiceWorkletNode = null;
+    this.filterNode = null;
+    this.filterDryGain = null;
+    this.filterWetGain = null;
+    this.echoDelay = null;
+    this.echoFeedback = null;
+    this.echoWetGain = null;
+    this.beatDelay = null;
+    this.beatFeedback = null;
+    this.beatWetGain = null;
+    this.reverbConvolver = null;
+    this.reverbWetGain = null;
+    this.flangerDelay = null;
+    this.flangerWetGain = null;
+    this.flangerLfo = null;
+    this.flangerLfoGain = null;
+    this.masterOutputGain = null;
+    this.recordingDestination = null;
+    this.analyser = null;
   }
 
   subscribe(callback: () => void): () => void {

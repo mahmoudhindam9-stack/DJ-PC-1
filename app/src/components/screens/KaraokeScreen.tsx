@@ -12,7 +12,7 @@ import {
   CheckCircle2,
   RefreshCw,
 } from 'lucide-react';
-import { ThemeColors, MicFilterType, BeatFxDivision } from '../../types';
+import { ThemeColors, MicFilterType, BeatFxDivision, MicVoiceEffectType } from '../../types';
 import { micEngine } from '../../audio/MicEngine';
 
 interface KaraokeScreenProps {
@@ -28,7 +28,10 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
   const [echoLevel, setEchoLevel] = useState(micEngine.echoLevel);
   const [reverbLevel, setReverbLevel] = useState(micEngine.reverbLevel);
   const [flangerMix, setFlangerMix] = useState(micEngine.flangerMix);
+  const [filterMix, setFilterMix] = useState(micEngine.filterMix);
   const [currentFilter, setCurrentFilter] = useState<MicFilterType>(micEngine.currentFilter);
+  const [voiceEffect, setVoiceEffect] = useState<MicVoiceEffectType>(micEngine.currentVoiceEffect);
+  const [beatFxEnabled, setBeatFxEnabled] = useState(micEngine.beatFxEnabled);
   const [bpm, setBpm] = useState(micEngine.bpm);
   const [beatDivision, setBeatDivision] = useState<BeatFxDivision>(micEngine.beatDivision);
   const [voiceProcessing, setVoiceProcessing] = useState(micEngine.voiceProcessing);
@@ -45,7 +48,10 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
       setEchoLevel(micEngine.echoLevel);
       setReverbLevel(micEngine.reverbLevel);
       setFlangerMix(micEngine.flangerMix);
+      setFilterMix(micEngine.filterMix);
       setCurrentFilter(micEngine.currentFilter);
+      setVoiceEffect(micEngine.currentVoiceEffect);
+      setBeatFxEnabled(micEngine.beatFxEnabled);
       setBpm(micEngine.bpm);
       setBeatDivision(micEngine.beatDivision);
       setVoiceProcessing(micEngine.voiceProcessing);
@@ -90,14 +96,34 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
   };
 
   const filterList: Array<{ id: MicFilterType; name: string }> = [
-    { id: 'NONE', name: 'Original / Bypass' },
+    { id: 'NORMAL', name: 'Clean' },
+    { id: 'STUDIO_REVERB', name: 'Studio Reverb' },
     { id: 'WARM', name: 'Warm Vocal' },
     { id: 'BRIGHT', name: 'Bright Treble' },
-    { id: 'TELEPHONE', name: 'Old Phone' },
-    { id: 'ROBOT', name: 'Cyber Robot' },
-    { id: 'RADIO', name: 'FM Broadcast' },
-    { id: 'CLUB', name: 'Club Stage' },
+    { id: 'TELEPHONE', name: 'Telephone' },
+    { id: 'ROBOT', name: 'Robot' },
+    { id: 'RADIO', name: 'Radio' },
     { id: 'MEGAPHONE', name: 'Megaphone' },
+    { id: 'CHORUS', name: 'Chorus' },
+    { id: 'TREMOLO', name: 'Tremolo' },
+    { id: 'BASS_BOOST', name: 'Bass Boost' },
+    { id: 'CLUB', name: 'Club Stage' },
+    { id: 'KID', name: 'Kid' },
+    { id: 'CHIPMUNK', name: 'Chipmunk' },
+    { id: 'SMALL_WOMAN', name: 'Young Woman' },
+    { id: 'OLD_WOMAN', name: 'Old Woman' },
+    { id: 'OLD_MAN', name: 'Old Man' },
+    { id: 'GIANT', name: 'Giant' },
+    { id: 'MONSTER', name: 'Monster' },
+  ];
+  const voiceEffects: Array<{ id: MicVoiceEffectType; name: string; emoji: string }> = [
+    { id: 'NONE', name: 'Clean', emoji: '🎙️' },
+    { id: 'WOMAN', name: 'Woman Voice', emoji: '👩' },
+    { id: 'KID', name: 'Kid Voice', emoji: '👶' },
+    { id: 'CHIPMUNK', name: 'Chipmunk', emoji: '🐿️' },
+    { id: 'MONSTER', name: 'Monster', emoji: '👹' },
+    { id: 'DARK_DEMON', name: 'Dark Demon', emoji: '👻' },
+    { id: 'GIANT_BASS', name: 'Giant Bass', emoji: '🏔️' },
   ];
 
   return (
@@ -266,6 +292,26 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
         </div>
       </div>
 
+      {/* Dedicated character voice presets copied from the Android Mic experience. */}
+      <div className="p-4 rounded-2xl border shadow-lg flex flex-col gap-3" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}>
+        <div>
+          <span className="text-xs font-bold tracking-wider opacity-70">{isArabic ? 'تغيير شخصيات الصوت' : 'VOICE CHANGER'}</span>
+          <p className="mt-1 text-[10px] opacity-60">{isArabic ? 'تغيير نبرة المايك مباشرة: امرأة أو طفل أو وحش وغيرها.' : 'Real-time voice character, pitch and tone transformation.'}</p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          {voiceEffects.map((effect) => {
+            const selected = voiceEffect === effect.id;
+            return (
+              <button key={effect.id} type="button" onClick={() => micEngine.setVoiceEffect(effect.id)} className="min-w-0 rounded-xl border p-3 flex flex-col items-center gap-1.5 transition-all hover:brightness-110" style={{ borderColor: selected ? themeColors.primary : themeColors.border, backgroundColor: selected ? themeColors.primary + '25' : themeColors.surfaceVariant, boxShadow: selected ? 'inset 0 0 0 1px ' + themeColors.primary : undefined }}>
+                <span className="text-2xl">{effect.emoji}</span>
+                <span className="text-[10px] font-bold text-center leading-tight">{effect.name}</span>
+                <span className="text-[8px] uppercase tracking-wider opacity-60">{selected ? 'ACTIVE' : 'VOICE'}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Vocal Effect Filters Chips */}
       <div
         className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
@@ -301,7 +347,7 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
       </div>
 
       {/* DSP Mixing Sliders: Mic Volume, Echo, Reverb, Flanger */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Mic Volume */}
         <div
           className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
@@ -421,6 +467,15 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
             }}
           />
         </div>
+
+        {/* Filter Mix */}
+        <div className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}>
+          <div className="flex justify-between text-xs font-bold">
+            <span className="flex items-center gap-1"><Sliders className="w-3.5 h-3.5" style={{ color: themeColors.primary }} />{isArabic ? 'مزج الفلتر' : 'FILTER MIX'}</span>
+            <span className="font-mono">{Math.round(filterMix * 100)}%</span>
+          </div>
+          <input type="range" min={0} max={1} step={0.01} value={filterMix} onChange={(e) => micEngine.setFilterMix(Number(e.target.value))} className="w-full h-2 rounded appearance-none cursor-pointer" style={{ accentColor: themeColors.primary, backgroundColor: themeColors.surfaceVariant }} />
+        </div>
       </div>
 
       {/* Beat FX & Voice Processing Toggles */}
@@ -432,7 +487,10 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
         }}
       >
         {/* BPM & Division */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => micEngine.setBeatFxEnabled(!beatFxEnabled)} className="px-3 py-2 rounded-xl text-xs font-black border" style={{ borderColor: beatFxEnabled ? themeColors.primary : themeColors.border, backgroundColor: beatFxEnabled ? themeColors.primary + '24' : themeColors.surfaceVariant, color: beatFxEnabled ? themeColors.primary : themeColors.textMuted }}>
+            {isArabic ? (beatFxEnabled ? 'مؤثر الإيقاع: يعمل' : 'مؤثر الإيقاع: متوقف') : (beatFxEnabled ? 'BEAT FX: ON' : 'BEAT FX: OFF')}
+          </button>
           <span className="text-xs font-bold opacity-70">BEAT SYNC:</span>
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-mono">{bpm} BPM</span>
