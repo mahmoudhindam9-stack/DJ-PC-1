@@ -91,6 +91,27 @@ export const App: React.FC = () => {
         const savedLang = await db.getSetting<boolean>('is_arabic', false);
         setIsArabic(savedLang);
         setAutoUpdatesEnabled(await db.getSetting<boolean>('auto_updates_enabled', true));
+
+        // Restore custom equalizer state
+        try {
+          const savedEq = await db.getSetting<{
+            enabled?: boolean;
+            preset?: string;
+            bands?: number[];
+            bassBoost?: number;
+            trebleBoost?: number;
+            preampDb?: number;
+          } | null>('active_eq_state', null);
+          if (savedEq) {
+            if (typeof savedEq.enabled === 'boolean') mainAudioEngine.setEqEnabled(savedEq.enabled);
+            if (Array.isArray(savedEq.bands) && savedEq.bands.length > 0) mainAudioEngine.applyCustomBands(savedEq.bands);
+            if (typeof savedEq.bassBoost === 'number') mainAudioEngine.setBassBoostLevel(savedEq.bassBoost);
+            if (typeof savedEq.trebleBoost === 'number') mainAudioEngine.setTrebleBoostLevel(savedEq.trebleBoost);
+            if (typeof savedEq.preampDb === 'number') mainAudioEngine.setPreampDb(savedEq.preampDb);
+          }
+        } catch (eqErr) {
+          console.warn('Could not restore equalizer settings:', eqErr);
+        }
       } catch (e) {
         console.warn('Storage initial load notice:', e);
       } finally {

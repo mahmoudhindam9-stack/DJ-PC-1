@@ -247,10 +247,10 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
       </div>
 
       {/* DECK A & DECK B SIDE-BY-SIDE */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         {/* DECK A */}
         <div
-          className="p-4 rounded-2xl border shadow-xl flex flex-col gap-3"
+          className="p-3 sm:p-4 rounded-2xl border shadow-xl flex flex-col gap-2.5 sm:gap-3"
           style={{
             backgroundColor: themeColors.surface,
             borderColor: `${themeColors.accentA}40`,
@@ -425,7 +425,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
 
         {/* DECK B */}
         <div
-          className="p-4 rounded-2xl border shadow-xl flex flex-col gap-3"
+          className="p-3 sm:p-4 rounded-2xl border shadow-xl flex flex-col gap-2.5 sm:gap-3"
           style={{
             backgroundColor: themeColors.surface,
             borderColor: `${themeColors.accentB}40`,

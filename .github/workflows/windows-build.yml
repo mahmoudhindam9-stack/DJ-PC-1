@@ -29,7 +29,7 @@ jobs:
       - name: Verify package root
         shell: powershell
         run: |
-          $allowed = @('setup.bat', 'uninstall.bat')
+          $allowed = @('setup.bat', 'uninstall.bat', 'package.json', 'metadata.json')
           $unexpected = Get-ChildItem -Path . -File | Where-Object { $_.Name -notin $allowed }
           if ($unexpected) {
             $unexpected | ForEach-Object { Write-Error "Unexpected root file: $($_.Name)" }

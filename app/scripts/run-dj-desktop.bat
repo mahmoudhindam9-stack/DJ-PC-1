@@ -38,16 +38,7 @@ if "!SERVER_RUNNING!"=="0" (
     ping 127.0.0.1 -n 2 >nul
 )
 
-if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --app="%APP_URL%" --user-data-dir="%BROWSER_DATA%" --no-first-run
-    exit /b 0
-)
-
-if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --app="%APP_URL%" --user-data-dir="%BROWSER_DATA%" --no-first-run
-    exit /b 0
-)
-
+:: 1. Prioritize Google Chrome (64-bit, 32-bit, or LocalAppData per-user)
 if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" (
     start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --app="%APP_URL%" --user-data-dir="%BROWSER_DATA%" --no-first-run
     exit /b 0
@@ -58,5 +49,11 @@ if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" (
     exit /b 0
 )
 
+if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
+    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --app="%APP_URL%" --user-data-dir="%BROWSER_DATA%" --no-first-run
+    exit /b 0
+)
+
+:: 2. Fall back to the default Windows web browser
 start "" "%APP_URL%"
 exit /b 0

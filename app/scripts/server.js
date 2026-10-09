@@ -203,11 +203,15 @@ function extractDownloadPage(html) {
 }
 
 function extractAudioUrl(html) {
-  const direct = /https?:\/\/[^"'<>\s]+\.mp3(?:\?[^"'<>\s]*)?/i.exec(html);
-  if (direct) return normalizeAlbumatyUrl(direct[0]);
+  const ogAudio = /<meta\s+[^>]*property=["']og:audio["'][^>]*content=["']([^"']+)["']/i.exec(html) ||
+                  /<meta\s+[^>]*content=["']([^"']+)["'][^>]*property=["']og:audio["']/i.exec(html);
+  if (ogAudio) return normalizeAlbumatyUrl(ogAudio[1]);
 
   const source = /<(?:audio|source)[^>]+src=["']([^"']+)["']/i.exec(html);
   if (source && /\.mp3/i.test(source[1])) return normalizeAlbumatyUrl(source[1]);
+
+  const direct = /https?:\/\/[^"'<>\s]+\.mp3(?:\?[^"'<>\s]*)?/i.exec(html);
+  if (direct) return normalizeAlbumatyUrl(direct[0]);
 
   const download = /<a[^>]+href=["']([^"']+)["'][^>]*>[^<]*(?:تحميل|download)[^<]*<\/a>/is.exec(html);
   if (download) {
@@ -229,8 +233,12 @@ function extractArtist(html) {
 }
 
 function extractAlbum(html) {
+  const ogAlbum = /<meta\s+[^>]*property=["']og:audio:album["'][^>]*content=["']([^"']+)["']/i.exec(html) ||
+                  /<meta\s+[^>]*content=["']([^"']+)["'][^>]*property=["']og:audio:album["']/i.exec(html);
+  if (ogAlbum) return ogAlbum[1].trim();
+
   const text = stripHtml(html);
-  const match = /اغاني\s+اخرى\s+من\s+ألبوم\s+([^<]+)/i.exec(text);
+  const match = /اغاني\s+اخرى\s+من\s+ألبوم\s+([^\r\n<,]+)/i.exec(text);
   return match ? match[1].trim() : undefined;
 }
 
@@ -290,13 +298,19 @@ async function resolveAlbumatySong(songUrl) {
   }
 
   const songHtml = await fetchText(songUrl);
-  const downloadPageUrl = extractDownloadPage(songHtml);
-  if (!downloadPageUrl || !isAllowedAlbumatyUrl(downloadPageUrl)) {
-    throw new Error('Download page for this song was not found.');
-  }
+  let audioUrl = extractAudioUrl(songHtml);
 
-  const downloadHtml = await fetchText(downloadPageUrl);
-  const audioUrl = extractAudioUrl(downloadHtml) || extractAudioUrl(songHtml);
+  if (!audioUrl) {
+    const downloadPageUrl = extractDownloadPage(songHtml);
+    if (downloadPageUrl && isAllowedAlbumatyUrl(downloadPageUrl)) {
+      try {
+        const downloadHtml = await fetchText(downloadPageUrl);
+        audioUrl = extractAudioUrl(downloadHtml);
+      } catch {
+        // Fall back to direct audio check
+      }
+    }
+  }
 
   if (!audioUrl || !isAllowedAudioUrl(audioUrl)) {
     throw new Error('Direct audio stream could not be resolved.');
@@ -580,6 +594,16 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[✓] DJ Desktop Studio running at http://127.0.0.1:${PORT}`);
-});
+export { handleApi, server };
+
+const isDirectRun = process.argv[1] && (
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url)) ||
+  process.argv[1].endsWith('server.js')
+);
+
+if (isDirectRun) {
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`[✓] DJ Desktop Studio running at http://127.0.0.1:${PORT}`);
+  });
+}
+
