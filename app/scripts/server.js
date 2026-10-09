@@ -414,6 +414,7 @@ async function resolveAlbumatySong(songUrl) {
   };
 }
 
+// v3.14.2: Albumaty CDN downloads are proxied only over validated public HTTPS URLs.
 async function proxyAudioStream(req, res, url, downloadName) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
