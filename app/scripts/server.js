@@ -95,7 +95,9 @@ function pathParts(url) {
 }
 
 function pageType(url) {
-  return pathParts(url)[0] || '';
+  const parts = pathParts(url);
+  // The current Albumaty catalog uses both /song/... and legacy /n/song/... URLs.
+  return ['n', 'a'].includes(parts[0]) ? (parts[1] || '') : (parts[0] || '');
 }
 
 function isSongUrl(url) {
@@ -274,6 +276,74 @@ async function fetchText(url, accept = 'text/html,application/xhtml+xml') {
 async function getAlbumatyHome() {
   const html = await fetchText(`${ALBUMATY_BASE}/cat/1.html`);
   return parseHome(html);
+}
+
+function normalizeAlbumatySearchText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\\u064B-\\u065F\\u0670\\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .toLocaleLowerCase('ar')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+function albumatySearchMatches(title, terms) {
+  const normalized = normalizeAlbumatySearchText(title);
+  return terms.every((term) => normalized.includes(term));
+}
+
+function groupAlbumatySearchResults(links) {
+  const uniqueLinks = links.filter((link, index, all) =>
+    all.findIndex((candidate) => candidate.url === link.url) === index
+  );
+  return {
+    categories: uniqueLinks.filter((link) => isCategoryUrl(link.url)),
+    albums: uniqueLinks.filter((link) => isAlbumUrl(link.url)),
+    songs: uniqueLinks.filter((link) => isSongUrl(link.url)),
+    artists: uniqueLinks.filter((link) => isArtistUrl(link.url)),
+  };
+}
+
+async function getAlbumatySearch(query) {
+  const searchTerm = String(query || '').trim().slice(0, 120);
+  if (searchTerm.length < 2) {
+    return { categories: [], albums: [], songs: [], artists: [] };
+  }
+
+  const terms = normalizeAlbumatySearchText(searchTerm).split(' ').filter(Boolean);
+  if (terms.length === 0) {
+    return { categories: [], albums: [], songs: [], artists: [] };
+  }
+
+  // Albumaty has appeared with both the PHP search endpoint and query-string forms.
+  // Try its native search routes, then filter the returned links by the full query.
+  const encoded = encodeURIComponent(searchTerm);
+  const searchUrls = [
+    `${ALBUMATY_BASE}/search.php?search=${encoded}`,
+    `${ALBUMATY_BASE}/?search=${encoded}`,
+    `${ALBUMATY_BASE}/?s=${encoded}`,
+    `${ALBUMATY_BASE}/search.php?q=${encoded}`,
+  ];
+
+  const pages = await Promise.all(searchUrls.map(async (url, index) => {
+    try {
+      const html = await fetchText(url);
+      const matches = parseLinks(html).filter((link) =>
+        albumatySearchMatches(link.title, terms) &&
+        (isSongUrl(link.url) || isAlbumUrl(link.url) || isArtistUrl(link.url) || isCategoryUrl(link.url))
+      );
+      return { index, matches };
+    } catch (error) {
+      return { index, matches: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }));
+
+  // If multiple legacy routes work, prefer the one yielding the richest set of
+  // matching records. Only matched links are returned, not the site's full homepage.
+  const best = pages.sort((left, right) => right.matches.length - left.matches.length || left.index - right.index)[0];
+  return groupAlbumatySearchResults(best?.matches || []);
 }
 
 async function getAlbumatySection(url) {
@@ -543,6 +613,16 @@ async function handleApi(req, res) {
 
     if (requestUrl.pathname === '/api/albumaty/home' && req.method === 'GET') {
       sendJson(res, 200, { ok: true, data: await getAlbumatyHome() });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/albumaty/search' && req.method === 'GET') {
+      const query = requestUrl.searchParams.get('q') || '';
+      if (query.trim().length < 2) {
+        sendJson(res, 400, { ok: false, error: 'Enter at least two characters to search for an artist or song.' });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, data: await getAlbumatySearch(query) });
       return true;
     }
 

@@ -77,6 +77,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
 }) => {
   const [source, setSource] = useState<'ALBUMATY' | 'AUDIUS'>('ALBUMATY');
   const [albumatyHome, setAlbumatyHome] = useState<AlbumatyHomeData>(EMPTY_ALBUMATY);
+  const [albumatySearchResults, setAlbumatySearchResults] = useState<AlbumatyHomeData | null>(null);
   const [albumatySection, setAlbumatySection] = useState<AlbumatySection | null>(null);
   const [audiusTracks, setAudiusTracks] = useState<AudiusTrack[]>([]);
   const [query, setQuery] = useState('');
@@ -94,6 +95,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     setMessage(null);
     try {
       setAlbumatyHome(await onlineMusicService.getAlbumatyHome(force));
+      setAlbumatySearchResults(null);
       setAlbumatySection(null);
     } catch (error) {
       setErrorMessage(
@@ -109,6 +111,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     setErrorMessage(null);
     setMessage(null);
     try {
+      setAlbumatySearchResults(null);
       const [trending, latest] = await Promise.all([
         onlineMusicService.getTrendingTracks(),
         onlineMusicService.getLatestTracks(),
@@ -122,6 +125,33 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Failed to load Audius.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const performOnlineSearch = async () => {
+    const searchTerm = query.trim();
+    if (!searchTerm || loading) return;
+
+    setLoading(true);
+    setErrorMessage(null);
+    setMessage(null);
+    setAlbumatySection(null);
+    try {
+      if (source === 'ALBUMATY') {
+        const results = await onlineMusicService.searchAlbumaty(searchTerm);
+        setAlbumatySearchResults(results);
+      } else {
+        const results = await onlineMusicService.searchAudius(searchTerm);
+        setAudiusTracks(results);
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : (isArabic ? 'تعذر البحث عن الأغاني.' : 'Could not search online music.')
       );
     } finally {
       setLoading(false);
@@ -148,6 +178,8 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
       artists: filter(albumatyHome.artists),
     };
   }, [albumatyHome, query]);
+
+  const activeAlbumaty = albumatySearchResults ?? filteredAlbumaty;
 
   const filteredAudius = useMemo(() => {
     const q = query.trim().toLocaleLowerCase();
@@ -615,29 +647,61 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
         </button>
       </div>
 
-      <div
+      <form
+        onSubmit={(event) => { event.preventDefault(); void performOnlineSearch(); }}
         className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl border"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
         }}
+        role="search"
       >
-        <Search className="w-4 h-4 opacity-60" />
+        <Search className="w-4 h-4 opacity-60 shrink-0" />
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="bg-transparent outline-none flex-1 text-xs"
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setAlbumatySearchResults(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setQuery('');
+              setAlbumatySearchResults(null);
+            }
+          }}
+          className="bg-transparent outline-none flex-1 text-xs min-w-0"
           placeholder={
             source === 'ALBUMATY'
               ? isArabic
-                ? 'ابحث في ألبوماتي'
-                : 'Search Albumaty'
+                ? 'ابحث باسم المطرب أو الأغنية...'
+                : 'Search by artist or song title...'
               : isArabic
-                ? 'ابحث في الموسيقى الأجنبية'
-                : 'Search foreign music'
+                ? 'ابحث باسم المطرب أو الأغنية...'
+                : 'Search by artist or song title...'
           }
+          aria-label={isArabic ? 'البحث باسم المطرب أو الأغنية' : 'Search by artist or song title'}
         />
-      </div>
+        {query.trim() && (
+          <button
+            type="button"
+            onClick={() => { setQuery(''); setAlbumatySearchResults(null); }}
+            className="p-1 rounded-md opacity-60 hover:opacity-100"
+            aria-label={isArabic ? 'مسح البحث' : 'Clear search'}
+            title={isArabic ? 'مسح البحث' : 'Clear search'}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={loading || !query.trim()}
+          className="rounded-lg px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
+          style={{ backgroundColor: themeColors.primary, color: '#fff' }}
+        >
+          <Search className="w-3.5 h-3.5" />
+          <span>{isArabic ? 'بحث' : 'Search'}</span>
+        </button>
+      </form>
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         {loading ? (
@@ -706,32 +770,43 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
             </div>
           ) : (
             <div className="space-y-5">
-              <OnlineSection
-                title={isArabic ? 'الأقسام' : 'Sections'}
-                links={filteredAlbumaty.categories}
-                themeColors={themeColors}
-                onOpen={openAlbumatyLink}
-              />
-              <OnlineSection
-                title={isArabic ? 'أحدث الألبومات' : 'New Albums'}
-                links={filteredAlbumaty.albums}
-                themeColors={themeColors}
-                onOpen={openAlbumatyLink}
-              />
-              <OnlineSection
-                title={isArabic ? 'أحدث الأغاني' : 'New Songs'}
-                links={filteredAlbumaty.songs}
-                themeColors={themeColors}
-                onOpen={playAlbumaty}
-                song
-                renderSong={renderAlbumatySongCard}
-              />
-              <OnlineSection
-                title={isArabic ? 'الفنانون' : 'Artists'}
-                links={filteredAlbumaty.artists}
-                themeColors={themeColors}
-                onOpen={openAlbumatyLink}
-              />
+              {albumatySearchResults &&
+                activeAlbumaty.categories.length + activeAlbumaty.albums.length + activeAlbumaty.songs.length + activeAlbumaty.artists.length === 0 ? (
+                <div className="py-12 text-center space-y-2 text-xs" style={{ color: themeColors.textMuted }}>
+                  <Search className="w-8 h-8 mx-auto opacity-40" />
+                  <div className="font-bold">{isArabic ? 'لا توجد نتائج مطابقة.' : 'No matching results found.'}</div>
+                  <div>{isArabic ? 'جرّب اسم المطرب فقط أو جزءًا من اسم الأغنية.' : 'Try an artist name or a shorter part of the song title.'}</div>
+                </div>
+              ) : (
+                <>
+                  <OnlineSection
+                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — الأقسام' : 'Search results — Sections') : (isArabic ? 'الأقسام' : 'Sections')}
+                    links={activeAlbumaty.categories}
+                    themeColors={themeColors}
+                    onOpen={openAlbumatyLink}
+                  />
+                  <OnlineSection
+                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — الألبومات' : 'Search results — Albums') : (isArabic ? 'أحدث الألبومات' : 'New Albums')}
+                    links={activeAlbumaty.albums}
+                    themeColors={themeColors}
+                    onOpen={openAlbumatyLink}
+                  />
+                  <OnlineSection
+                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — الأغاني' : 'Search results — Songs') : (isArabic ? 'أحدث الأغاني' : 'New Songs')}
+                    links={activeAlbumaty.songs}
+                    themeColors={themeColors}
+                    onOpen={playAlbumaty}
+                    song
+                    renderSong={renderAlbumatySongCard}
+                  />
+                  <OnlineSection
+                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — المطربون' : 'Search results — Artists') : (isArabic ? 'نتائج البحث — المطربون' : 'Artists')}
+                    links={activeAlbumaty.artists}
+                    themeColors={themeColors}
+                    onOpen={openAlbumatyLink}
+                  />
+                </>
+              )}
               {message && <div className="px-1 text-xs opacity-70">{message}</div>}
             </div>
           )

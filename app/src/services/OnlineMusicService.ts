@@ -54,6 +54,14 @@ class OnlineMusicService {
     );
   }
 
+  async searchAlbumaty(query: string): Promise<AlbumatyHomeData> {
+    const term = query.trim();
+    if (!term) return { categories: [], albums: [], songs: [], artists: [] };
+    return this.requestJson<AlbumatyHomeData>(
+      `${LOCAL_API}/search?q=${encodeURIComponent(term)}`
+    );
+  }
+
   async resolveAlbumatySong(url: string): Promise<ResolvedOnlineTrack> {
     return this.requestJson<ResolvedOnlineTrack>(
       `${LOCAL_API}/resolve?url=${encodeURIComponent(url)}`
