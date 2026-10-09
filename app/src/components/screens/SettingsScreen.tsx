@@ -13,8 +13,14 @@ import {
   Sparkles,
   Trash2,
   FolderTree,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  CloudDownload,
+  Loader2,
 } from 'lucide-react';
 import { AppThemeOption, ThemeColors } from '../../types';
+import { APP_VERSION, type UpdateInfo, type UpdateStatus } from '../../services/UpdateService';
 import { THEMES } from '../../utils/theme';
 import { downloadSetupBat, downloadUninstallBat, downloadShortcutBat } from '../../utils/setupDownloader';
 
@@ -25,6 +31,13 @@ interface SettingsScreenProps {
   onToggleLanguage: () => void;
   themeColors: ThemeColors;
   onOpenSetupModal: () => void;
+  autoUpdatesEnabled: boolean;
+  onAutoUpdatesEnabledChange: (enabled: boolean) => void;
+  updateStatus: UpdateStatus;
+  updateInfo: UpdateInfo | null;
+  updateMessage: string | null;
+  onCheckForUpdates: () => void;
+  onInstallUpdate: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -34,6 +47,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onToggleLanguage,
   themeColors,
   onOpenSetupModal,
+  autoUpdatesEnabled,
+  onAutoUpdatesEnabledChange,
+  updateStatus,
+  updateInfo,
+  updateMessage,
+  onCheckForUpdates,
+  onInstallUpdate,
 }) => {
   const themeList = Object.keys(THEMES) as AppThemeOption[];
 
@@ -281,6 +301,49 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
+      {/* Updates */}
+      <div className="p-5 rounded-2xl border shadow-lg flex flex-col gap-4" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}>
+        <div className="flex items-center gap-2">
+          <RefreshCw className="w-5 h-5" style={{ color: themeColors.primary }} />
+          <div>
+            <h2 className="font-bold text-sm">{isArabic ? 'التحديثات والإصدار' : 'Updates & Version'}</h2>
+            <p className="text-xs mt-0.5" style={{ color: themeColors.textMuted }}>{isArabic ? 'فحص يدوي وتحديث تلقائي عند توفر إصدار أحدث.' : 'Manually check for updates or enable automatic checks and installation.'}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border p-3" style={{ borderColor: themeColors.border }}>
+            <div className="text-[10px] opacity-60">{isArabic ? 'الإصدار الحالي' : 'CURRENT VERSION'}</div>
+            <div className="font-mono text-sm font-bold mt-1">v{updateInfo?.currentVersion || APP_VERSION}</div>
+          </div>
+          <div className="rounded-xl border p-3" style={{ borderColor: themeColors.border }}>
+            <div className="text-[10px] opacity-60">{isArabic ? 'أحدث إصدار' : 'LATEST VERSION'}</div>
+            <div className="font-mono text-sm font-bold mt-1">v{updateInfo?.latestVersion || '—'}</div>
+          </div>
+        </div>
+        <label className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer" style={{ borderColor: themeColors.border }}>
+          <input type="checkbox" checked={autoUpdatesEnabled} onChange={(event) => onAutoUpdatesEnabledChange(event.target.checked)} className="mt-0.5 h-4 w-4" />
+          <span className="min-w-0">
+            <span className="block text-xs font-bold">{isArabic ? 'البحث والتحديث التلقائي' : 'Automatic update checks and installation'}</span>
+            <span className="block text-[11px] mt-1 opacity-70 leading-relaxed">{isArabic ? 'يفحص عند تشغيل البرنامج وكل 24 ساعة؛ ويؤجل التثبيت حتى يتوقف الصوت.' : 'Checks on startup and every 24 hours. Installation is deferred while audio plays.'}</span>
+          </span>
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={onCheckForUpdates} disabled={updateStatus === 'checking' || updateStatus === 'installing'} className="px-4 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 disabled:opacity-50" style={{ borderColor: themeColors.border, backgroundColor: themeColors.surfaceVariant }}>
+            {updateStatus === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isArabic ? 'البحث عن تحديثات الآن' : 'Check for updates now'}
+          </button>
+          {updateInfo?.updateAvailable && <button onClick={onInstallUpdate} disabled={updateStatus === 'installing'} className="px-4 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: themeColors.primary }}>
+            {updateStatus === 'installing' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+            {isArabic ? 'تنزيل وتثبيت التحديث' : 'Download & install update'}
+          </button>}
+        </div>
+        {updateMessage && <div role="status" className="rounded-xl border p-3 text-xs flex items-start gap-2" style={{ borderColor: updateStatus === 'error' ? '#ef4444' : themeColors.border, color: updateStatus === 'error' ? '#ef4444' : themeColors.textPrimary, backgroundColor: themeColors.surfaceVariant }}>
+          {updateStatus === 'error' ? <AlertCircle className="w-4 h-4 shrink-0" /> : updateStatus === 'upToDate' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <RefreshCw className="w-4 h-4 shrink-0" />}
+          <span>{updateMessage}</span>
+        </div>}
+        {updateInfo?.updateAvailable && !updateInfo.canAutoInstall && <button onClick={() => window.open(updateInfo.releaseUrl, '_blank', 'noopener,noreferrer')} className="text-left text-xs underline opacity-80">{isArabic ? 'فتح صفحة الإصدار للتنزيل اليدوي' : 'Open release page for manual download'}</button>}
+      </div>
+
       {/* About Box */}
       <div
         className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
@@ -294,7 +357,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <h2 className="font-bold text-sm">{isArabic ? 'عن التطبيق' : 'About DJ Desktop'}</h2>
         </div>
         <p className="text-xs leading-relaxed" style={{ color: themeColors.textMuted }}>
-          DJ Desktop v3.6.7 — Standalone Windows Desktop Audio Station. Remixed from the original
+          DJ Desktop v3.6.8 — Standalone Windows Desktop Audio Station. Remixed from the original
           Android DJ Suite into a high-performance desktop workstation with full feature parity: Dual
           DJ Decks with pitch control, 64-pad soundboard sampler, 10-band Dolby EQ, live hardware
           Karaoke monitoring with DSP filters, online cloud streaming, and direct Egypt & World Radio

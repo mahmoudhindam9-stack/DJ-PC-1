@@ -24,6 +24,7 @@ import { OnlineMusicScreen } from './components/screens/OnlineMusicScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { batchImportAudioFiles } from './utils/fileImporter';
 import { DesktopSetupModal } from './components/desktop/DesktopSetupModal';
+import { updateService, type UpdateInfo, type UpdateStatus } from './services/UpdateService';
 
 
 export const App: React.FC = () => {
@@ -49,6 +50,11 @@ export const App: React.FC = () => {
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
+  const [appDataLoaded, setAppDataLoaded] = useState(false);
+  const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(true);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   const themeColors = THEMES[currentTheme] || THEMES.DJ_BLUE;
 
@@ -84,8 +90,11 @@ export const App: React.FC = () => {
 
         const savedLang = await db.getSetting<boolean>('is_arabic', false);
         setIsArabic(savedLang);
+        setAutoUpdatesEnabled(await db.getSetting<boolean>('auto_updates_enabled', true));
       } catch (e) {
         console.warn('Storage initial load notice:', e);
+      } finally {
+        setAppDataLoaded(true);
       }
     }
     loadData();
@@ -301,9 +310,10 @@ export const App: React.FC = () => {
   };
 
   // Playlists
-  const handleCreatePlaylist = async (name: string) => {
+  const handleCreatePlaylist = async (name: string): Promise<Playlist> => {
     const created = await db.createPlaylist(name);
-    setPlaylists([...playlists, created]);
+    setPlaylists((current) => [...current.filter((playlist) => playlist.id !== created.id), created]);
+    return created;
   };
 
   const handleDeletePlaylist = async (id: string) => {
@@ -366,6 +376,78 @@ export const App: React.FC = () => {
     await db.setSetting('is_arabic', next);
   };
 
+  const handleAutoUpdatesEnabledChange = async (enabled: boolean) => {
+    setAutoUpdatesEnabled(enabled);
+    await db.setSetting('auto_updates_enabled', enabled);
+  };
+
+  const handleCheckForUpdates = async () => {
+    setUpdateStatus('checking');
+    setUpdateMessage(isArabic ? 'جاري الاتصال بخادم التحديثات...' : 'Checking the update server...');
+    try {
+      const result = await updateService.checkForUpdates();
+      setUpdateInfo(result);
+      setUpdateStatus(result.updateAvailable ? 'available' : 'upToDate');
+      setUpdateMessage(result.updateAvailable
+        ? (isArabic ? `يتوفر الإصدار ${result.latestVersion}.` : `Version ${result.latestVersion} is available.`)
+        : (isArabic ? `أنت تستخدم أحدث إصدار (${result.currentVersion}).` : `You are using the latest version (${result.currentVersion}).`));
+    } catch (error) {
+      setUpdateStatus('error');
+      setUpdateMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر فحص التحديثات.' : 'Could not check for updates.'));
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!updateInfo) return;
+    if (!updateInfo.canAutoInstall) {
+      window.open(updateInfo.releaseUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setUpdateStatus('installing');
+    setUpdateMessage(isArabic ? 'جاري تنزيل الإصدار الجديد؛ سيعاد فتح البرنامج تلقائيًا.' : 'Downloading the new version; the app will reopen automatically.');
+    try {
+      await updateService.installUpdate();
+    } catch (error) {
+      setUpdateStatus('error');
+      setUpdateMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر بدء التحديث.' : 'Could not start the update.'));
+    }
+  };
+
+  useEffect(() => {
+    if (!appDataLoaded || !autoUpdatesEnabled) return;
+    let disposed = false;
+    const check = async () => {
+      try {
+        const result = await updateService.checkForUpdates();
+        if (disposed) return;
+        setUpdateInfo(result);
+        setUpdateStatus(result.updateAvailable ? 'available' : 'upToDate');
+        setUpdateMessage(result.updateAvailable
+          ? (isArabic ? `يتوفر تحديث جديد: ${result.latestVersion}.` : `A new update is available: ${result.latestVersion}.`)
+          : (isArabic ? 'التطبيق محدث.' : 'The application is up to date.'));
+      } catch (error) {
+        if (!disposed) {
+          setUpdateStatus('error');
+          setUpdateMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر فحص التحديثات تلقائيًا.' : 'Automatic update check failed.'));
+        }
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => { void check(); }, 24 * 60 * 60 * 1000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [appDataLoaded, autoUpdatesEnabled, isArabic]);
+
+  useEffect(() => {
+    if (!appDataLoaded || !autoUpdatesEnabled || isPlaying || !updateInfo?.updateAvailable ||
+        !updateInfo.canAutoInstall || updateStatus === 'installing' || updateStatus === 'error') return;
+    setUpdateStatus('installing');
+    setUpdateMessage(isArabic ? 'جاري تثبيت التحديث تلقائيًا...' : 'Installing the update automatically...');
+    updateService.installUpdate().catch((error) => {
+      setUpdateStatus('error');
+      setUpdateMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر بدء التحديث التلقائي.' : 'Automatic installation failed.'));
+    });
+  }, [appDataLoaded, autoUpdatesEnabled, isPlaying, isArabic, updateInfo, updateStatus]);
+
   return (
     <div
       id="dj-desktop-app"
@@ -406,6 +488,7 @@ export const App: React.FC = () => {
             onCreatePlaylist={handleCreatePlaylist}
             onDeletePlaylist={handleDeletePlaylist}
             onAddSongToPlaylist={handleAddSongToPlaylist}
+            onLoadPlaylistSongs={(playlistId) => db.getSongsInPlaylist(playlistId)}
             onEnqueueSong={handleEnqueueSong}
             onSendToDeckA={handleSendToDeckA}
             onSendToDeckB={handleSendToDeckB}
@@ -451,10 +534,13 @@ export const App: React.FC = () => {
             onSendToDeckA={handleSendToDeckA}
             onSendToDeckB={handleSendToDeckB}
             onEnqueueTrack={handleEnqueueSong}
-            onSaveToLibrary={(track) => {
-              db.addSong(track);
-              setLibrary([track, ...library]);
+            onSaveToLibrary={async (track) => {
+              await db.addSong(track);
+              setLibrary((current) => [track, ...current.filter((song) => song.id !== track.id)]);
             }}
+            playlists={playlists}
+            onAddSongToPlaylist={handleAddSongToPlaylist}
+            onCreatePlaylist={handleCreatePlaylist}
             onOpenQueue={() => setShowQueue(true)}
           />
         )}
@@ -467,6 +553,13 @@ export const App: React.FC = () => {
             onToggleLanguage={handleToggleLanguage}
             themeColors={themeColors}
             onOpenSetupModal={() => setIsSetupModalOpen(true)}
+            autoUpdatesEnabled={autoUpdatesEnabled}
+            onAutoUpdatesEnabledChange={handleAutoUpdatesEnabledChange}
+            updateStatus={updateStatus}
+            updateInfo={updateInfo}
+            updateMessage={updateMessage}
+            onCheckForUpdates={handleCheckForUpdates}
+            onInstallUpdate={handleInstallUpdate}
           />
         )}
       </main>

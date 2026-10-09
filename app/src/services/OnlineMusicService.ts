@@ -60,20 +60,36 @@ class OnlineMusicService {
     );
   }
 
+  getAlbumatyStreamEndpoint(url: string): string {
+    return `${LOCAL_API}/stream?url=${encodeURIComponent(url)}`;
+  }
+
   getAlbumatyDownloadEndpoint(url: string): string {
     return `${LOCAL_API}/download?url=${encodeURIComponent(url)}`;
   }
 
+  getAudiusStreamEndpoint(url: string): string {
+    return `/api/online/stream?url=${encodeURIComponent(url)}`;
+  }
+
+  getAudiusDownloadEndpoint(url: string, title = 'song'): string {
+    return `/api/online/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(title)}.mp3`;
+  }
+
   convertResolvedToAudioItem(track: ResolvedOnlineTrack, stableId?: string): AudioItem {
+    const sourceUrl = track.id;
     return {
       id: stableId || `albumaty_${encodeURIComponent(track.id)}`,
       title: track.title,
       artist: track.artist || 'Albumaty',
       album: track.album || 'Albumaty Online',
       duration: track.duration || 0,
-      uri: track.streamUrl,
+      uri: this.getAlbumatyStreamEndpoint(sourceUrl),
       coverUri: track.artworkUrl,
       addedDate: Date.now(),
+      onlineSource: 'ALBUMATY',
+      sourceUrl,
+      downloadUri: this.getAlbumatyDownloadEndpoint(sourceUrl),
     };
   }
 
@@ -93,15 +109,19 @@ class OnlineMusicService {
   }
 
   convertAudiusToAudioItem(track: AudiusTrack): AudioItem {
+    const sourceUrl = track.streamUrl || '';
     return {
       id: `audius_${track.id}`,
       title: track.title,
       artist: track.artist,
       album: track.album || 'Audius',
       duration: track.duration || 0,
-      uri: track.streamUrl || '',
+      uri: sourceUrl ? this.getAudiusStreamEndpoint(sourceUrl) : '',
       coverUri: track.artworkUrl,
       addedDate: Date.now(),
+      onlineSource: 'AUDIUS',
+      sourceUrl,
+      downloadUri: sourceUrl ? this.getAudiusDownloadEndpoint(sourceUrl, track.title) : undefined,
     };
   }
 
@@ -193,3 +213,52 @@ class OnlineMusicService {
 }
 
 export const onlineMusicService = new OnlineMusicService();
+
+export function getOnlineDownloadEndpoint(item: {
+  id: string;
+  uri: string;
+  onlineSource?: 'ALBUMATY' | 'AUDIUS';
+  sourceUrl?: string;
+  downloadUri?: string;
+  title?: string;
+}): string | null {
+  if (item.downloadUri) return item.downloadUri;
+  const sourceUrl = item.sourceUrl || '';
+  if (item.onlineSource === 'ALBUMATY' && sourceUrl) {
+    return `/api/albumaty/download?url=${encodeURIComponent(sourceUrl)}`;
+  }
+  if (item.onlineSource === 'AUDIUS' && sourceUrl) {
+    return `/api/online/download?url=${encodeURIComponent(sourceUrl)}&name=${encodeURIComponent(item.title || 'song')}.mp3`;
+  }
+
+  const legacyAlbumatyUrl = item.id.startsWith('albumaty_')
+    ? decodeURIComponent(item.id.slice('albumaty_'.length))
+    : item.id;
+  if (/^https?:\/\/(?:www\.)?albumaty\.com\/song\//i.test(legacyAlbumatyUrl)) {
+    return `/api/albumaty/download?url=${encodeURIComponent(legacyAlbumatyUrl)}`;
+  }
+
+  const legacyAudiusUrl = sourceUrl || item.uri;
+  try {
+    const parsed = new URL(legacyAudiusUrl, window.location.origin);
+    if (/^(?:[^.]+\.)*audius\.co$/i.test(parsed.hostname) && parsed.pathname.includes('/tracks/')) {
+      return `/api/online/download?url=${encodeURIComponent(legacyAudiusUrl)}&name=${encodeURIComponent(item.title || 'song')}.mp3`;
+    }
+  } catch {
+    // Ignore malformed legacy URLs.
+  }
+  return null;
+}
+
+export function downloadOnlineItem(item: Parameters<typeof getOnlineDownloadEndpoint>[0]): boolean {
+  const url = getOnlineDownloadEndpoint(item);
+  if (!url) return false;
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.rel = 'noopener';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  return true;
+}

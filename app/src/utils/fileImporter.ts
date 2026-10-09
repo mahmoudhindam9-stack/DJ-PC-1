@@ -141,6 +141,8 @@ export async function parseAudioFile(
     duration,
     uri,
     addedDate: Date.now(),
+    // Preserve bytes because this Blob URL expires when the application closes.
+    audioBlob: file.slice(0, file.size, file.type || 'application/octet-stream'),
   };
 }
 

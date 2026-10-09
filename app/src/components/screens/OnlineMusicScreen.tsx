@@ -5,7 +5,10 @@ import {
   Download,
   Globe,
   ListPlus,
+  ListMusic,
   Music2,
+  X,
+  Plus,
   Play,
   RefreshCw,
   Search,
@@ -17,7 +20,8 @@ import {
   AlbumatySection,
   onlineMusicService,
 } from '../../services/OnlineMusicService';
-import { AudioItem, AudiusTrack, ThemeColors } from '../../types';
+import { AudioItem, AudiusTrack, Playlist, ThemeColors } from '../../types';
+import { downloadOnlineItem } from '../../services/OnlineMusicService';
 
 interface OnlineMusicScreenProps {
   themeColors: ThemeColors;
@@ -27,6 +31,9 @@ interface OnlineMusicScreenProps {
   onSendToDeckB: (track: AudioItem) => void;
   onEnqueueTrack: (track: AudioItem) => void;
   onSaveToLibrary: (track: AudioItem) => void;
+  playlists: Playlist[];
+  onAddSongToPlaylist: (playlistId: string, track: AudioItem) => Promise<void>;
+  onCreatePlaylist: (name: string) => Promise<Playlist>;
   onOpenQueue: () => void;
 }
 
@@ -63,6 +70,9 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
   onSendToDeckB,
   onEnqueueTrack,
   onSaveToLibrary,
+  playlists,
+  onAddSongToPlaylist,
+  onCreatePlaylist,
   onOpenQueue,
 }) => {
   const [source, setSource] = useState<'ALBUMATY' | 'AUDIUS'>('ALBUMATY');
@@ -73,6 +83,10 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
+  const [pendingPlaylistTrack, setPendingPlaylistTrack] = useState<AudioItem | null>(null);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [playlistBusy, setPlaylistBusy] = useState(false);
 
   const loadAlbumaty = async (force = false) => {
     setLoading(true);
@@ -227,18 +241,68 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
   };
 
   const downloadAlbumaty = (link: AlbumatyLink) => {
-    if (!isSong(link.url)) {
-      void openAlbumatyLink(link);
-      return;
+    if (!isSong(link.url)) { void openAlbumatyLink(link); return; }
+    const item: AudioItem = {
+      id: link.url, title: link.title, artist: 'Albumaty', album: 'Albumaty Online', duration: 0,
+      uri: onlineMusicService.getAlbumatyStreamEndpoint(link.url), addedDate: Date.now(),
+      onlineSource: 'ALBUMATY', sourceUrl: link.url,
+      downloadUri: onlineMusicService.getAlbumatyDownloadEndpoint(link.url),
+    };
+    if (downloadOnlineItem(item)) setMessage(isArabic ? 'بدأ تنزيل الأغنية...' : 'Song download started...');
+    else setErrorMessage(isArabic ? 'تعذر تجهيز رابط التنزيل.' : 'Could not prepare the download.');
+  };
+
+  const addAlbumatyToPlaylist = (link: AlbumatyLink) => {
+    if (!isSong(link.url)) { void openAlbumatyLink(link); return; }
+    void resolveAndAct(link, (item, title) => {
+      setPendingPlaylistTrack(item);
+      setShowPlaylistPicker(true);
+      setMessage(isArabic ? `اختر قائمة لإضافة ${title}` : `Choose a playlist for ${title}`);
+    });
+  };
+
+  const addAudiusToPlaylist = (track: AudiusTrack) => {
+    setPendingPlaylistTrack(onlineMusicService.convertAudiusToAudioItem(track));
+    setShowPlaylistPicker(true);
+    setMessage(isArabic ? `اختر قائمة لإضافة ${track.title}` : `Choose a playlist for ${track.title}`);
+  };
+
+  const choosePlaylist = async (playlistId: string) => {
+    if (!pendingPlaylistTrack || playlistBusy) return;
+    setPlaylistBusy(true);
+    try {
+      await onAddSongToPlaylist(playlistId, pendingPlaylistTrack);
+      setMessage(isArabic ? `تمت إضافة "${pendingPlaylistTrack.title}" إلى قائمة التشغيل` : `Added "${pendingPlaylistTrack.title}" to the playlist`);
+      setShowPlaylistPicker(false);
+      setPendingPlaylistTrack(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (isArabic ? 'تعذرت إضافة الأغنية للقائمة.' : 'Could not add the track to the playlist.'));
+    } finally {
+      setPlaylistBusy(false);
     }
-    const anchor = document.createElement('a');
-    anchor.href = onlineMusicService.getAlbumatyDownloadEndpoint(link.url);
-    anchor.rel = 'noopener';
-    anchor.style.display = 'none';
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setMessage(isArabic ? 'بدأ تنزيل الأغنية...' : 'Song download started...');
+  };
+
+  const createPlaylistAndAdd = async () => {
+    if (!pendingPlaylistTrack || !newPlaylistName.trim() || playlistBusy) return;
+    setPlaylistBusy(true);
+    try {
+      const created = await onCreatePlaylist(newPlaylistName.trim());
+      await onAddSongToPlaylist(created.id, pendingPlaylistTrack);
+      setNewPlaylistName('');
+      setMessage(isArabic ? `تم إنشاء "${created.name}" وإضافة الأغنية إليها` : `Created "${created.name}" and added the track`);
+      setShowPlaylistPicker(false);
+      setPendingPlaylistTrack(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر إنشاء القائمة.' : 'Could not create the playlist.'));
+    } finally {
+      setPlaylistBusy(false);
+    }
+  };
+
+  const downloadAudius = (track: AudiusTrack) => {
+    if (downloadOnlineItem(onlineMusicService.convertAudiusToAudioItem(track))) {
+      setMessage(isArabic ? 'بدأ تنزيل الأغنية...' : 'Song download started...');
+    } else setErrorMessage(isArabic ? 'تعذر تجهيز رابط التنزيل.' : 'Could not prepare the download.');
   };
 
   const playAudius = (track: AudiusTrack) => {
@@ -262,6 +326,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     else onSendToDeckB(item);
   };
 
+  // Online result cards share playback, queue, download and playlist actions.
   const renderAlbumatySongCard = (link: AlbumatyLink) => (
     <div
       key={link.url}
@@ -325,8 +390,9 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
         >
           <Disc className="w-3.5 h-3.5" />
         </button>
+        <button type="button" onClick={() => { addAlbumatyToPlaylist(link); }} className="p-1.5 rounded-lg border" style={{ borderColor: themeColors.border }} title="Add to playlist"><ListMusic className="w-3.5 h-3.5" /></button>
         <button
-          onClick={() => sendAlbumatyToDeck(link, 'A')}
+          onClick={() => { sendAlbumatyToDeck(link, 'A'); }}
           className="px-1.5 py-1 rounded-lg border text-[10px] font-bold"
           style={{ borderColor: themeColors.accentA, color: themeColors.accentA }}
           title="Deck A"
@@ -401,12 +467,10 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
           <ListPlus className="w-3.5 h-3.5" />
         </button>
         <button
-          onClick={() => {
-            if (track.streamUrl) window.open(track.streamUrl, '_blank', 'noopener,noreferrer');
-          }}
+          onClick={() => downloadAudius(track)}
           className="p-1.5 rounded-lg border"
           style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'فتح البث' : 'Open stream'}
+          title={isArabic ? 'تنزيل الأغنية' : 'Download track'}
         >
           <Download className="w-3.5 h-3.5" />
         </button>
@@ -418,8 +482,9 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
         >
           <Disc className="w-3.5 h-3.5" />
         </button>
+        <button type="button" onClick={() => addAudiusToPlaylist(track)} className="p-1.5 rounded-lg border" style={{ borderColor: themeColors.border }} title={isArabic ? 'إضافة إلى قائمة تشغيل' : 'Add to playlist'}><ListMusic className="w-3.5 h-3.5" /></button>
         <button
-          onClick={() => sendAudiusToDeck(track, 'A')}
+          onClick={() => { sendAudiusToDeck(track, 'A'); }}
           className="px-1.5 py-1 rounded-lg border text-[10px] font-bold"
           style={{ borderColor: themeColors.accentA, color: themeColors.accentA }}
         >
@@ -659,6 +724,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
                 themeColors={themeColors}
                 onOpen={playAlbumaty}
                 song
+                renderSong={renderAlbumatySongCard}
               />
               <OnlineSection
                 title={isArabic ? 'الفنانون' : 'Artists'}
@@ -682,6 +748,30 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
           </div>
         )}
       </div>
+
+      {showPlaylistPicker && pendingPlaylistTrack && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border p-4 shadow-2xl space-y-3" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.textPrimary }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-sm font-black">{isArabic ? 'إضافة إلى قائمة تشغيل' : 'Add to playlist'}</h2>
+                <p className="text-xs opacity-70 mt-1 truncate">{pendingPlaylistTrack.title} — {pendingPlaylistTrack.artist}</p>
+              </div>
+              <button onClick={() => { setShowPlaylistPicker(false); setPendingPlaylistTrack(null); setNewPlaylistName(''); }} className="p-2 rounded-lg border" style={{ borderColor: themeColors.border }} aria-label={isArabic ? 'إغلاق' : 'Close'}><X className="w-4 h-4" /></button>
+            </div>
+            {playlists.length > 0 ? (
+              <div className="space-y-2">
+                {playlists.map((playlist) => <button key={playlist.id} onClick={() => void choosePlaylist(playlist.id)} disabled={playlistBusy} className="w-full rounded-xl border p-3 text-left text-xs font-bold flex items-center justify-between gap-3 disabled:opacity-50" style={{ borderColor: themeColors.border, backgroundColor: themeColors.surfaceVariant }}><span className="truncate">{playlist.name}</span><span className="text-[10px] opacity-60 shrink-0">{playlist.songCount} {isArabic ? 'أغنية' : 'songs'}</span></button>)}
+              </div>
+            ) : <p className="text-xs opacity-70">{isArabic ? 'لا توجد قوائم بعد؛ أنشئ قائمة جديدة أدناه.' : 'No playlists yet. Create one below.'}</p>}
+            <div className="border-t pt-3 space-y-2" style={{ borderColor: themeColors.border }}>
+              <label className="block text-xs font-bold">{isArabic ? 'أو أنشئ قائمة جديدة' : 'Or create a new playlist'}</label>
+              <input value={newPlaylistName} onChange={(event) => setNewPlaylistName(event.target.value)} placeholder={isArabic ? 'اسم قائمة التشغيل' : 'Playlist name'} className="w-full rounded-xl border px-3 py-2 text-xs outline-none" style={{ borderColor: themeColors.border, backgroundColor: themeColors.surfaceVariant, color: themeColors.textPrimary }} />
+              <button onClick={() => void createPlaylistAndAdd()} disabled={playlistBusy || !newPlaylistName.trim()} className="w-full rounded-xl px-3 py-2.5 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: themeColors.primary, color: '#fff' }}><Plus className="w-4 h-4" />{playlistBusy ? (isArabic ? 'جاري الحفظ...' : 'Saving...') : (isArabic ? 'إنشاء وإضافة الأغنية' : 'Create & add track')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -692,7 +782,8 @@ const OnlineSection: React.FC<{
   themeColors: ThemeColors;
   onOpen: (link: AlbumatyLink) => void;
   song?: boolean;
-}> = ({ title, links, themeColors, onOpen, song }) => {
+  renderSong?: (link: AlbumatyLink) => React.ReactNode;
+}> = ({ title, links, themeColors, onOpen, song, renderSong }) => {
   if (links.length === 0) return null;
 
   return (
@@ -708,12 +799,7 @@ const OnlineSection: React.FC<{
       <div className="space-y-2">
         {links.slice(0, song ? 100 : 60).map((link) =>
           song ? (
-            <AlbumatySongRow
-              key={link.url}
-              link={link}
-              onPlay={onOpen}
-              themeColors={themeColors}
-            />
+            renderSong ? renderSong(link) : <AlbumatySongRow key={link.url} link={link} onPlay={onOpen} themeColors={themeColors} />
           ) : (
             <button
               key={link.url}

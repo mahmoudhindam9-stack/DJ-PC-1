@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { RadioStation, AudioItem, ThemeColors } from '../../types';
 import { radioService, EGYPT_QURAN_STATION } from '../../services/RadioService';
+import { db } from '../../storage/db';
 
 interface RadioScreenProps {
   themeColors: ThemeColors;
@@ -40,39 +41,60 @@ export const RadioScreen: React.FC<RadioScreenProps> = ({
   const [stations, setStations] = useState<RadioStation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [favoriteStations, setFavoriteStations] = useState<RadioStation[]>([]);
+  const favoriteIds = new Set(favoriteStations.map((station) => station.id));
+  // Radio favorites are restored from persistent app storage.
 
-  // Fetch stations when tab or query changes
+  // Restore saved radio favorites from IndexedDB.
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
+    db.getRadioFavorites()
+      .then((saved) => { if (mounted) setFavoriteStations(saved); })
+      .catch((error) => console.warn('Could not restore radio favorites:', error));
+    return () => { mounted = false; };
+  }, []);
+
+  // Favorites use persisted local data; only Egypt and World query the directory.
+  useEffect(() => {
+    let mounted = true;
+    if (activeTab === 'FAVORITES') {
+      setIsLoading(false);
+      return () => { mounted = false; };
+    }
     setIsLoading(true);
-
     const country = activeTab === 'EG' ? 'EG' : null;
-    radioService.getStations(country, searchQuery).then((res) => {
-      if (isMounted) {
-        setStations(res);
+    radioService.getStations(country, searchQuery)
+      .then((result) => {
+        if (!mounted) return;
+        setStations(result);
         setIsLoading(false);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
+      })
+      .catch((error) => {
+        console.warn('Radio station list failed:', error);
+        if (mounted) { setStations([]); setIsLoading(false); }
+      });
+    return () => { mounted = false; };
   }, [activeTab, searchQuery]);
 
-  const toggleFavorite = (stationId: string) => {
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(stationId)) next.delete(stationId);
-      else next.add(stationId);
-      return next;
-    });
+  const toggleFavorite = async (stationId: string) => {
+    const station = [...stations, ...favoriteStations].find((item) => item.id === stationId);
+    if (!station) return;
+    try {
+      await db.toggleRadioFavorite(station);
+      setFavoriteStations(await db.getRadioFavorites());
+    } catch (error) {
+      console.warn('Could not save radio favorite:', error);
+    }
   };
 
-  const displayedStations =
-    activeTab === 'FAVORITES'
-      ? stations.filter((s) => favoriteIds.has(s.id))
-      : stations;
+  const displayedStations = activeTab === 'FAVORITES'
+    ? favoriteStations.filter((station) =>
+        !searchQuery.trim() ||
+        `${station.name} ${station.tags || ''}`.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())
+      )
+    : [...stations].sort((left, right) =>
+        Number(favoriteIds.has(right.id)) - Number(favoriteIds.has(left.id))
+      );
 
   const stationToAudioItem = (station: RadioStation): AudioItem => ({
     id: 'radio_' + station.id,

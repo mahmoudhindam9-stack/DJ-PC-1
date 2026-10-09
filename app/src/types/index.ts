@@ -7,6 +7,12 @@ export interface AudioItem {
   uri: string; // Blob URL or remote URL or local path
   coverUri?: string;
   addedDate: number;
+  /** Binary audio data for local songs, persisted in IndexedDB. */
+  audioBlob?: Blob;
+  /** Source metadata for streamed tracks from online providers. */
+  onlineSource?: 'ALBUMATY' | 'AUDIUS';
+  sourceUrl?: string;
+  downloadUri?: string;
   isFavorite?: boolean;
   playCount?: number;
   lastPlayed?: number;

@@ -1,7 +1,7 @@
 import { AudioItem, Playlist, CustomPreset, RadioStation } from '../types';
 
 const DB_NAME = 'dj_desktop_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 class StorageDB {
   private dbPromise: Promise<IDBDatabase>;
@@ -48,6 +48,14 @@ class StorageDB {
     });
   }
 
+  // Recreate temporary browser URLs from persistent file bytes whenever songs are read.
+  private hydrateSong(song: AudioItem): AudioItem {
+    if (song.audioBlob instanceof Blob) {
+      return { ...song, uri: URL.createObjectURL(song.audioBlob) };
+    }
+    return song;
+  }
+
   // --- SONGS ---
   async getAllSongs(): Promise<AudioItem[]> {
     const db = await this.dbPromise;
@@ -55,7 +63,7 @@ class StorageDB {
       const tx = db.transaction('songs', 'readonly');
       const store = tx.objectStore('songs');
       const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => resolve((req.result || []).map((song: AudioItem) => this.hydrateSong(song)));
       req.onerror = () => reject(req.error);
     });
   }
@@ -230,7 +238,7 @@ class StorageDB {
           for (const sId of songIds) {
             const req = songStore.get(sId);
             req.onsuccess = () => {
-              if (req.result) results.push(req.result);
+              if (req.result) results.push(this.hydrateSong(req.result));
               pending--;
               if (pending === 0) resolve(results);
             };

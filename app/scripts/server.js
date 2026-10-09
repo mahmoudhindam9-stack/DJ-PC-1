@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +13,7 @@ const DIST_DIR = fs.existsSync(path.join(APP_DIR, 'dist'))
 
 const PORT = Number(process.argv[2] || process.env.PORT || 3000);
 const ALBUMATY_BASE = 'https://www.albumaty.com';
+const UPDATE_REPOSITORY = 'mahmoudhindam9-stack/DJ-PC-1';
 const REQUEST_TIMEOUT_MS = 15000;
 
 const MIME_TYPES = {
@@ -44,7 +46,13 @@ function parseUrl(raw) {
 }
 
 function normalizeAlbumatyUrl(value) {
-  const decoded = decodeURIComponent(String(value || '').replace(/&amp;/g, '&').trim());
+  const raw = String(value || '').replace(/&amp;/g, '&').trim();
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // Keep already-encoded paths when a literal percent sign is present.
+  }
 
   if (decoded.startsWith('//')) return `https:${decoded}`;
   if (decoded.startsWith('/')) return `${ALBUMATY_BASE}${decoded}`;
@@ -71,6 +79,13 @@ function isAllowedAudioUrl(raw) {
   if (!parsed || !/^https?:$/.test(parsed.protocol)) return false;
   const host = parsed.hostname.toLowerCase();
   return host === 'albumaty.com' || host === 'www.albumaty.com' || host.endsWith('.albumaty.com');
+}
+
+function isAllowedAudiusUrl(raw) {
+  const parsed = parseUrl(raw);
+  if (!parsed || !/^https?:$/.test(parsed.protocol)) return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === 'audius.co' || host.endsWith('.audius.co');
 }
 
 function pathParts(url) {
@@ -298,6 +313,111 @@ async function resolveAlbumatySong(songUrl) {
   };
 }
 
+async function proxyAudioStream(req, res, url, downloadName) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let upstream;
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DJ Desktop Studio',
+    Accept: 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8',
+  };
+  if (req.headers.range) headers.Range = String(req.headers.range);
+  const parsed = parseUrl(url);
+  headers.Referer = parsed && isAllowedAudioUrl(url) ? parsed.origin + '/' : 'https://audius.co/';
+
+  try {
+    upstream = await fetch(url, { signal: controller.signal, redirect: 'follow', headers });
+  } finally {
+    // Only connection setup has a timeout. The audio body may be much longer than 15 seconds.
+    clearTimeout(timer);
+  }
+
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  if ((!upstream.ok && upstream.status !== 206) || !upstream.body) {
+    throw new Error('Audio stream failed (HTTP ' + upstream.status + ')');
+  }
+
+  const responseHeaders = {
+    'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
+    'Cache-Control': 'no-store',
+    'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
+  };
+  const contentLength = upstream.headers.get('content-length');
+  const contentRange = upstream.headers.get('content-range');
+  if (contentLength) responseHeaders['Content-Length'] = contentLength;
+  if (contentRange) responseHeaders['Content-Range'] = contentRange;
+
+  if (downloadName) {
+    const safeAsciiName = String(downloadName).replace(/[\\/:*?"<>|\r\n]/g, '_').replace(/[^\x20-\x7E]/g, '_') || 'song.mp3';
+    responseHeaders['Content-Disposition'] =
+      'attachment; filename="' + safeAsciiName + '"; filename*=UTF-8\'\'' + encodeURIComponent(downloadName);
+  }
+
+  res.writeHead(upstream.status, responseHeaders);
+  for await (const chunk of upstream.body) {
+    if (!res.write(Buffer.from(chunk))) {
+      await new Promise((resolve) => res.once('drain', resolve));
+    }
+  }
+  res.end();
+}
+
+function compareVersions(left, right) {
+  const parse = (value) => String(value || '').replace(/^v/i, '').split(/[.+-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] || 0) > (b[index] || 0)) return 1;
+    if ((a[index] || 0) < (b[index] || 0)) return -1;
+  }
+  return 0;
+}
+
+async function getLatestReleaseInfo() {
+  let currentVersion = '0.0.0';
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf8'));
+    currentVersion = String(packageJson.version || currentVersion);
+  } catch {
+    // Continue with the remote release version if the local manifest cannot be read.
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch('https://api.github.com/repos/' + UPDATE_REPOSITORY + '/releases/latest', {
+      signal: controller.signal,
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DJ Desktop Studio Updater' },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) throw new Error('GitHub update check failed (HTTP ' + response.status + ').');
+  const release = await response.json();
+  const latestVersion = String(release.tag_name || release.name || '').replace(/^v/i, '');
+  if (!latestVersion) throw new Error('The latest release did not include a version tag.');
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  const pcAsset = assets.find((asset) =>
+    /dj-desktop-pc/i.test(String(asset.name || '')) && /\.zip$/i.test(String(asset.name || ''))
+  );
+
+  return {
+    currentVersion,
+    latestVersion,
+    updateAvailable: compareVersions(latestVersion, currentVersion) > 0,
+    canAutoInstall: process.platform === 'win32' && Boolean(pcAsset && pcAsset.browser_download_url),
+    assetUrl: pcAsset ? String(pcAsset.browser_download_url || '') : '',
+    releaseUrl: String(release.html_url || ('https://github.com/' + UPDATE_REPOSITORY + '/releases/latest')),
+    publishedAt: String(release.published_at || ''),
+    releaseNotes: String(release.body || '').slice(0, 3000),
+  };
+}
+
 function sendJson(res, statusCode, data) {
   const payload = JSON.stringify(data);
   res.writeHead(statusCode, {
@@ -311,75 +431,100 @@ function sendJson(res, statusCode, data) {
 async function handleApi(req, res) {
   const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
 
-  if (!requestUrl.pathname.startsWith('/api/albumaty/')) return false;
+  if (!requestUrl.pathname.startsWith('/api/')) return false;
 
   try {
-    if (requestUrl.pathname === '/api/albumaty/home') {
+    if (requestUrl.pathname === '/api/update/check' && req.method === 'GET') {
+      sendJson(res, 200, { ok: true, data: await getLatestReleaseInfo() });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/update/install' && req.method === 'POST') {
+      if (process.platform !== 'win32') {
+        sendJson(res, 409, { ok: false, error: 'Automatic installation is only supported in the Windows desktop package.' });
+        return true;
+      }
+      const update = await getLatestReleaseInfo();
+      if (!update.updateAvailable) {
+        sendJson(res, 200, { ok: true, data: { accepted: false, message: 'The app is already up to date.' } });
+        return true;
+      }
+      if (!update.assetUrl || !update.canAutoInstall) {
+        sendJson(res, 409, { ok: false, error: 'The latest release does not contain a Windows PC update package.' });
+        return true;
+      }
+      const updaterScript = path.join(APP_DIR, 'scripts', 'apply-update.ps1');
+      if (!fs.existsSync(updaterScript)) {
+        sendJson(res, 500, { ok: false, error: 'The Windows update installer is missing. Download the latest PC package manually.' });
+        return true;
+      }
+
+      const child = spawn('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updaterScript,
+        '-PackageUrl', update.assetUrl, '-AppDir', APP_DIR, '-ServerPid', String(process.pid),
+      ], { detached: true, stdio: 'ignore', windowsHide: true });
+      child.unref();
+      sendJson(res, 200, { ok: true, data: { accepted: true, message: 'The update is accepted; the app will reopen after installation.' } });
+      setTimeout(() => { server.close(() => process.exit(0)); }, 1200);
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/albumaty/home' && req.method === 'GET') {
       sendJson(res, 200, { ok: true, data: await getAlbumatyHome() });
       return true;
     }
 
-    if (requestUrl.pathname === '/api/albumaty/section') {
+    if (requestUrl.pathname === '/api/albumaty/section' && req.method === 'GET') {
       const target = requestUrl.searchParams.get('url') || '';
       sendJson(res, 200, { ok: true, data: await getAlbumatySection(normalizeAlbumatyUrl(target)) });
       return true;
     }
 
-    if (requestUrl.pathname === '/api/albumaty/resolve') {
+    if (requestUrl.pathname === '/api/albumaty/resolve' && req.method === 'GET') {
       const target = requestUrl.searchParams.get('url') || '';
       sendJson(res, 200, { ok: true, data: await resolveAlbumatySong(normalizeAlbumatyUrl(target)) });
       return true;
     }
 
-    if (requestUrl.pathname === '/api/albumaty/download') {
+    if (requestUrl.pathname === '/api/albumaty/stream' && req.method === 'GET') {
       const target = requestUrl.searchParams.get('url') || '';
       const resolved = await resolveAlbumatySong(normalizeAlbumatyUrl(target));
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      try {
-        const upstream = await fetch(resolved.downloadUrl, {
-          signal: controller.signal,
-          redirect: 'follow',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DJ Desktop Studio',
-            Referer: `${ALBUMATY_BASE}/`,
-            Accept: 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8',
-          },
-        });
-
-        if (!upstream.ok || !upstream.body) {
-          throw new Error(`Audio download failed (HTTP ${upstream.status})`);
-        }
-
-        const contentLength = upstream.headers.get('content-length');
-        const safeName = encodeURIComponent(`${resolved.title || 'song'}.mp3`);
-
-        const headers = {
-          'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
-          'Content-Disposition': `attachment; filename*=UTF-8''${safeName}`,
-          'Cache-Control': 'no-store',
-        };
-
-        if (contentLength) headers['Content-Length'] = contentLength;
-
-        res.writeHead(200, headers);
-
-        for await (const chunk of upstream.body) {
-          res.write(Buffer.from(chunk));
-        }
-        res.end();
-        return true;
-      } finally {
-        clearTimeout(timer);
-      }
+      await proxyAudioStream(req, res, resolved.streamUrl);
+      return true;
     }
 
-    sendJson(res, 404, { ok: false, error: 'Albumaty endpoint not found.' });
+    if (requestUrl.pathname === '/api/albumaty/download' && req.method === 'GET') {
+      const target = requestUrl.searchParams.get('url') || '';
+      const resolved = await resolveAlbumatySong(normalizeAlbumatyUrl(target));
+      await proxyAudioStream(req, res, resolved.downloadUrl, (resolved.title || 'song') + '.mp3');
+      return true;
+    }
+
+    if ((requestUrl.pathname === '/api/online/stream' || requestUrl.pathname === '/api/online/download') && req.method === 'GET') {
+      const target = requestUrl.searchParams.get('url') || '';
+      if (!isAllowedAudiusUrl(target)) {
+        sendJson(res, 400, { ok: false, error: 'Invalid Audius audio URL.' });
+        return true;
+      }
+      if (requestUrl.pathname === '/api/online/stream') {
+        await proxyAudioStream(req, res, target);
+      } else {
+        const requestedName = requestUrl.searchParams.get('name') || 'song.mp3';
+        const safeName = requestedName.toLowerCase().endsWith('.mp3') ? requestedName : requestedName + '.mp3';
+        await proxyAudioStream(req, res, target, safeName);
+      }
+      return true;
+    }
+
+    sendJson(res, 404, { ok: false, error: 'API endpoint not found.' });
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Online music request failed.';
-    sendJson(res, 502, { ok: false, error: message });
+    if (res.headersSent) {
+      res.destroy(error instanceof Error ? error : undefined);
+    } else {
+      sendJson(res, 502, { ok: false, error: message });
+    }
     return true;
   }
 }
