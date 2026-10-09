@@ -23,10 +23,9 @@ interface MiniPlayerProps {
   durationMs: number;
   playbackMode: PlaybackMode;
   volume: number;
-  crossfader: number;
-  crossfadeTrack: AudioItem | null;
+  crossfadeDurationSeconds: number;
   themeColors: ThemeColors;
-  onCrossfaderChange: (value: number) => void;
+  onCrossfadeDurationChange: (seconds: number) => void;
   onPlayPause: () => void;
   onNext: () => void;
   onPrev: () => void;
@@ -46,10 +45,9 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   durationMs,
   playbackMode,
   volume,
-  crossfader,
-  crossfadeTrack,
+  crossfadeDurationSeconds,
   themeColors,
-  onCrossfaderChange,
+  onCrossfadeDurationChange,
   onPlayPause,
   onNext,
   onPrev,
@@ -102,42 +100,23 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         </span>
       </div>
 
-      {/* Main-player crossfader: blend the current track with the next queued song. */}
-      <div
-        className="flex items-center gap-2.5 rounded-lg border px-3 py-1.5"
-        style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border }}
-      >
-        <div className="min-w-0 w-[22%]">
-          <div className="text-[9px] font-black tracking-wider" style={{ color: themeColors.accentA }}>A · {isArabic ? 'الحالي' : 'CURRENT'}</div>
-          <div className="truncate text-[10px]" title={currentSong?.title || ''}>{currentSong?.title || (isArabic ? 'لا توجد أغنية' : 'No track')}</div>
+      {/* Automatic overlap duration, rather than a manual A/B mix fader. */}
+      <div className="flex items-center gap-3 rounded-lg border px-3 py-2" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border }}>
+        <div className="shrink-0 min-w-[116px]">
+          <div className="text-[10px] font-black tracking-wider" style={{ color: themeColors.primary }}>{isArabic ? 'تداخل الأغاني' : 'CROSSFADE'}</div>
+          <div className="text-[10px] opacity-65">{isArabic ? 'مدة التداخل' : 'Overlap duration'}</div>
         </div>
-        <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[9px] font-bold tracking-[0.12em]">
-            <span style={{ color: themeColors.accentA }}>A</span>
-            <span style={{ color: themeColors.textMuted }}>{isArabic ? 'مِزج الأغاني' : 'CROSSFADER'} · {Math.round(crossfader * 100)}%</span>
-            <span style={{ color: themeColors.accentB }}>B</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={crossfader}
-            disabled={!currentSong || !crossfadeTrack}
-            onChange={(event) => onCrossfaderChange(Number(event.target.value))}
-            aria-label={isArabic ? 'مزج الأغنية الحالية مع التالية' : 'Crossfade current song with next queued song'}
-            title={isArabic ? 'اسحب للمزج بين الأغنية الحالية والتالية' : 'Blend current and next queued songs'}
-            className="w-full h-2 rounded-full appearance-none cursor-ew-resize disabled:opacity-40"
-            style={{
-              accentColor: crossfader < 0.5 ? themeColors.accentA : themeColors.accentB,
-              background: 'linear-gradient(90deg, ' + themeColors.accentA + ' 0%, ' + themeColors.primary + ' 50%, ' + themeColors.accentB + ' 100%)',
-            }}
-          />
-        </div>
-        <div className="min-w-0 w-[22%] text-right">
-          <div className="text-[9px] font-black tracking-wider" style={{ color: themeColors.accentB }}>B · {isArabic ? 'التالي' : 'NEXT'}</div>
-          <div className="truncate text-[10px]" title={crossfadeTrack?.title || ''}>{crossfadeTrack?.title || (isArabic ? 'أضف أغنية' : 'Queue another track')}</div>
-        </div>
+        <span className="text-[11px] font-mono font-bold tabular-nums w-7 text-right">{crossfadeDurationSeconds}s</span>
+        <input
+          type="range" min={0} max={15} step={1} value={crossfadeDurationSeconds}
+          onChange={(event) => onCrossfadeDurationChange(Number(event.target.value))}
+          aria-label={isArabic ? 'مدة التداخل بين الأغاني من صفر إلى 15 ثانية' : 'Automatic song crossfade duration, zero to 15 seconds'}
+          title={isArabic ? 'صفر = بدون تداخل، 15 = أطول تداخل' : '0 = no overlap; 15 = longest overlap'}
+          className="flex-1 h-2 rounded-full appearance-none cursor-ew-resize"
+          style={{ accentColor: themeColors.primary, backgroundColor: themeColors.border }}
+        />
+        <div className="flex items-center justify-between gap-2 text-[9px] opacity-60 w-10"><span>0</span><span>15</span></div>
+        <span className="text-[10px] opacity-65">sec</span>
       </div>
 
       {/* Controls Row */}

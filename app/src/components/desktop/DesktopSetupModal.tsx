@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { ThemeColors } from '../../types';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
-import { downloadSetupBat, downloadUninstallBat, downloadShortcutBat } from '../../utils/setupDownloader';
-import { Trash2, FolderTree, Play } from 'lucide-react';
+
+import { Trash2, FolderTree } from 'lucide-react';
+
+const PC_PACKAGE_URL = 'https://github.com/mahmoudhindam9-stack/DJ-PC-1/releases/latest/download/DJ-Desktop-PC-Latest.zip';
 
 interface DesktopSetupModalProps {
   isOpen: boolean;
@@ -156,7 +158,7 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                   <p className="font-semibold text-emerald-300">
                     {isArabic
                       ? 'تم تجهيز ملف setup.bat التلقائي في المجلد الرئيسي للبرنامج!'
-                      : 'The automated setup.bat file has been created in the project root!'}
+                      : 'Download the complete Windows package to get setup.bat and all version files.'}
                   </p>
                   <p className="opacity-80">
                     {isArabic
@@ -166,30 +168,16 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Download the entire current PC package, not a standalone script. */}
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={downloadSetupBat}
-                  className="flex-1 min-w-[200px] py-3 px-5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2 transition-transform active:scale-95"
-                >
+                <a href={PC_PACKAGE_URL} className="flex-1 min-w-[240px] py-3 px-5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2 transition-transform active:scale-95">
                   <Download className="w-4 h-4" />
-                  <span>{isArabic ? 'تحميل ملف التثبيت المحدّث (setup.bat)' : 'Download Fixed setup.bat'}</span>
-                </button>
-                <button
-                  onClick={downloadShortcutBat}
-                  className="py-3 px-4 rounded-xl font-bold text-sm bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 flex items-center justify-center gap-2 transition-transform active:scale-95"
-                  title={isArabic ? 'إنشاء أيقونة سطح المكتب فقط' : 'Create Desktop Shortcut only'}
-                >
-                  <Play className="w-4 h-4" />
-                  <span>{isArabic ? 'إنشاء الأيقونة فقط (.bat)' : 'Create Shortcut only'}</span>
-                </button>
-                <button
-                  onClick={downloadUninstallBat}
-                  className="py-3 px-4 rounded-xl font-bold text-sm bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 flex items-center justify-center gap-2 transition-transform active:scale-95"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>{isArabic ? 'تحميل (uninstall.bat)' : 'Download (uninstall.bat)'}</span>
-                </button>
+                  <span>{isArabic ? 'تحميل حزمة ويندوز كاملة ومحدّثة' : 'Download complete, updated Windows package'}</span>
+                </a>
+                <a href="https://github.com/mahmoudhindam9-stack/DJ-PC-1/releases/latest" target="_blank" rel="noreferrer" className="py-3 px-4 rounded-xl font-bold text-sm bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 flex items-center justify-center gap-2">
+                  <ExternalLink className="w-4 h-4" />
+                  <span>{isArabic ? 'تفاصيل الإصدار' : 'Release details'}</span>
+                </a>
               </div>
 
               {/* Clean folder structure guide */}
@@ -207,8 +195,8 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                   </p>
                   <p className="opacity-80 leading-relaxed font-mono text-[11px]">
                     {isArabic
-                      ? '📁 المجلد الرئيسي يحتوي فقط على: setup.bat (للتثبيت) و uninstall.bat (لحذف الملفات) — وجميع الملفات الأخرى منظمة ومرتبة داخل مجلدات (scripts/ ، public/ ، src/ ، docs/).'
-                      : '📁 Root folder contains only: setup.bat (installer) and uninstall.bat (clean uninstaller) — all other files are neatly organized inside subfolders (scripts/, public/, src/, docs/).'}
+                      ? '📁 الحزمة الكاملة تحتوي على setup.bat وuninstall.bat ومجلد app بكل ملفات التشغيل والبناء والتحديث.'
+                      : '📁 The full ZIP contains setup.bat, uninstall.bat, and the complete app folder with production assets and updater scripts.'}
                   </p>
                 </div>
               </div>
@@ -235,8 +223,8 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                     </h5>
                     <p className="text-[11px] opacity-70 leading-relaxed">
                       {isArabic
-                        ? 'قم بتنزيل مجلد البرنامج وفك ضغطه في أي مكان تريده على جهاز الكمبيوتر (مثلاً C:\\DJ-Desktop).'
-                        : 'Download and extract the project files to any folder on your computer.'}
+                        ? 'نزّل حزمة ويندوز الكاملة، وفك ضغطها، ثم شغّل setup.bat الموجود بجانب مجلد app.'
+                        : 'Download the complete Windows ZIP, extract it, then run setup.bat beside the app folder.'}
                     </p>
                   </div>
 
@@ -255,8 +243,8 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                     </h5>
                     <p className="text-[11px] opacity-70 leading-relaxed">
                       {isArabic
-                        ? 'انقر نقراً مزدوجاً فوق ملف setup.bat (أو setup.ps1). ستبدأ عملية التثبيت الآلي تلقائياً.'
-                        : 'Double-click setup.bat. It will inspect dependencies, run npm install & build.'}
+                        ? 'ملف setup.bat داخل الحزمة الكاملة يشغّل سكريبت التثبيت وكل ملفات الإصدار معًا.'
+                        : 'The bundled setup.bat runs the included setup scripts and installs this complete version.'}
                     </p>
                   </div>
 
@@ -468,13 +456,13 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={downloadUninstallBat}
+                <a
+                  href={PC_PACKAGE_URL}
                   className="flex-1 py-3 px-5 rounded-xl font-bold text-sm bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/30 flex items-center justify-center gap-2 transition-transform active:scale-95"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>{isArabic ? 'تحميل ملف uninstall.bat مباشرة' : 'Download uninstall.bat Now'}</span>
-                </button>
+                  <span>{isArabic ? 'تحميل الحزمة الكاملة التي تشمل uninstall.bat' : 'Download full package with uninstall.bat'}</span>
+                </a>
               </div>
 
               {/* What gets removed list */}

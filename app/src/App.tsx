@@ -45,12 +45,12 @@ export const App: React.FC = () => {
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVolume] = useState(0.85);
-  const [crossfader, setCrossfader] = useState(() => {
+  const [crossfadeDurationSeconds, setCrossfadeDurationSeconds] = useState(() => {
     try {
-      const saved = Number(window.localStorage.getItem('dj-main-player-crossfader'));
-      return Number.isFinite(saved) && saved >= 0 && saved <= 1 ? saved : 0;
+      const saved = Number(window.localStorage.getItem('dj-main-player-crossfade-seconds'));
+      return Number.isFinite(saved) && saved >= 0 && saved <= 15 ? Math.round(saved) : 5;
     } catch {
-      return 0;
+      return 5;
     }
   });
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('NORMAL');
@@ -73,29 +73,29 @@ export const App: React.FC = () => {
   const themeColors = THEMES[currentTheme] || THEMES.DJ_BLUE;
 
   const crossfadeTrack: AudioItem | null = (() => {
-    if (!currentSong) return null;
+    if (!currentSong || queue.length === 0 || playbackMode === 'SHUFFLE' || playbackMode === 'REPEAT_ONE') return null;
     const currentIndex = queue.findIndex((track) => track.id === currentSong.id);
-    if (currentIndex >= 0 && queue.length > 1) return queue[(currentIndex + 1) % queue.length] || null;
-    return queue.find((track) => track.id !== currentSong.id)
-      || library.find((track) => track.id !== currentSong.id)
-      || null;
+    if (currentIndex < 0) return null;
+    if (currentIndex < queue.length - 1) return queue[currentIndex + 1];
+    if (playbackMode === 'REPEAT_ALL' && queue.length > 1) return queue[0];
+    return null;
   })();
 
   useEffect(() => {
-    mainAudioEngine.setCrossfader(crossfader, false);
-  }, [crossfader]);
+    mainAudioEngine.setCrossfadeDuration(crossfadeDurationSeconds);
+  }, [crossfadeDurationSeconds]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem('dj-main-player-crossfader', String(crossfader));
+      window.localStorage.setItem('dj-main-player-crossfade-seconds', String(crossfadeDurationSeconds));
     } catch {
       // Local storage can be unavailable in restricted browser contexts.
     }
-  }, [crossfader]);
+  }, [crossfadeDurationSeconds]);
 
   useEffect(() => {
-    mainAudioEngine.loadCrossfadeTrack(crossfadeTrack);
-  }, [crossfadeTrack?.id, crossfadeTrack?.uri]);
+    mainAudioEngine.loadCrossfadeTrack(crossfadeDurationSeconds > 0 ? crossfadeTrack : null);
+  }, [currentSong?.id, crossfadeTrack?.id, crossfadeTrack?.uri, crossfadeDurationSeconds]);
 
   // Load persistence (saved songs, playlists, settings)
   useEffect(() => {
@@ -180,11 +180,18 @@ export const App: React.FC = () => {
     const unsubEnd = mainAudioEngine.onEnded(() => {
       handleTrackEnded();
     });
+    const unsubTransition = mainAudioEngine.onTrackTransition((track) => {
+      setCurrentSong(track);
+      setCurrentTimeMs(mainAudioEngine.currentTimeMs);
+      setDurationMs(mainAudioEngine.durationMs);
+      setCurrentRadioStationId(null);
+    });
 
     return () => {
       unsubTime();
       unsubState();
       unsubEnd();
+      unsubTransition();
     };
   }, [queue, currentSong, playbackMode]);
 
@@ -381,15 +388,8 @@ export const App: React.FC = () => {
     mainAudioEngine.setVolume(v);
   };
 
-  const handleCrossfaderChange = (value: number) => {
-    const nextValue = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-    mainAudioEngine.setCrossfader(nextValue);
-    setCrossfader(nextValue);
-    try {
-      window.localStorage.setItem('dj-main-player-crossfader', String(nextValue));
-    } catch {
-      // Optional persistence.
-    }
+  const handleCrossfadeDurationChange = (seconds: number) => {
+    setCrossfadeDurationSeconds(Math.max(0, Math.min(15, Math.round(Number.isFinite(seconds) ? seconds : 0))));
   };
 
   const handleTogglePlaybackMode = () => {
@@ -846,11 +846,10 @@ export const App: React.FC = () => {
         durationMs={durationMs}
         playbackMode={playbackMode}
         volume={volume}
-        crossfader={crossfader}
-        crossfadeTrack={crossfadeTrack}
+        crossfadeDurationSeconds={crossfadeDurationSeconds}
         themeColors={themeColors}
         isArabic={isArabic}
-        onCrossfaderChange={handleCrossfaderChange}
+        onCrossfadeDurationChange={handleCrossfadeDurationChange}
         onPlayPause={handlePlayPause}
         onNext={handleNext}
         onPrev={handlePrev}

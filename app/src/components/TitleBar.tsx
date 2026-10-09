@@ -17,6 +17,7 @@ import {
 import { TabType, AppThemeOption, ThemeColors } from '../types';
 import { THEMES } from '../utils/theme';
 import { PWAInstallButton } from './desktop/PWAInstallButton';
+import { APP_VERSION } from '../services/UpdateService';
 
 interface TitleBarProps {
   activeTab: TabType;
@@ -78,7 +79,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           className="px-1.5 py-0.2 rounded text-[10px] font-semibold opacity-75"
           style={{ backgroundColor: themeColors.surfaceVariant }}
         >
-          v3.6.9
+          v{APP_VERSION}
         </span>
       </div>
 

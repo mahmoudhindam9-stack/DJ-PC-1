@@ -9,7 +9,14 @@ export class AudioEngine {
   private crossfadeSourceNode: MediaElementAudioSourceNode | null = null;
   private currentTrackGain: GainNode | null = null;
   private crossfadeTrackGain: GainNode | null = null;
-  private crossfadePosition = 0;
+  private currentTrack: AudioItem | null = null;
+  private standbyTrack: AudioItem | null = null;
+  private crossfadeDurationSeconds = 5;
+  private crossfadeInProgress = false;
+  private crossfadeDurationMs = 0;
+  private crossfadeElapsedMs = 0;
+  private crossfadeStartedAtMs = 0;
+  private crossfadeTimer: ReturnType<typeof setTimeout> | null = null;
   private crossfadeTrackId: string | null = null;
   private crossfadeTrackUri: string | null = null;
 
@@ -37,6 +44,30 @@ export class AudioEngine {
   private onTimeUpdateListeners: Array<(currentTime: number, duration: number) => void> = [];
   private onStateChangeListeners: Array<(isPlaying: boolean) => void> = [];
   private onEndedListeners: Array<() => void> = [];
+  private onTrackTransitionListeners: Array<(track: AudioItem) => void> = [];
+
+  private readonly primaryTimeUpdateHandler = () => {
+    const cur = this.audioElement.currentTime * 1000;
+    const dur = (this.audioElement.duration || 0) * 1000;
+    this.onTimeUpdateListeners.forEach((fn) => fn(cur, dur));
+    this.checkAutomaticCrossfade();
+  };
+
+  private readonly primaryPlayHandler = () => {
+    this.onStateChangeListeners.forEach((fn) => fn(true));
+  };
+
+  private readonly primaryPauseHandler = () => {
+    this.onStateChangeListeners.forEach((fn) => fn(false));
+  };
+
+  private readonly primaryEndedHandler = () => {
+    if (this.crossfadeInProgress && this.standbyTrack) {
+      this.finishCrossfade();
+      return;
+    }
+    this.onEndedListeners.forEach((fn) => fn());
+  };
 
   constructor() {
     this.audioElement = new Audio();
@@ -46,24 +77,21 @@ export class AudioEngine {
     this.crossfadeAudioElement = new Audio();
     this.crossfadeAudioElement.preload = 'auto';
     this.crossfadeAudioElement.crossOrigin = 'anonymous';
+    this.attachPrimaryListeners();
+  }
 
-    this.audioElement.addEventListener('timeupdate', () => {
-      const cur = this.audioElement.currentTime * 1000;
-      const dur = (this.audioElement.duration || 0) * 1000;
-      this.onTimeUpdateListeners.forEach((fn) => fn(cur, dur));
-    });
+  private attachPrimaryListeners(): void {
+    this.audioElement.addEventListener('timeupdate', this.primaryTimeUpdateHandler);
+    this.audioElement.addEventListener('play', this.primaryPlayHandler);
+    this.audioElement.addEventListener('pause', this.primaryPauseHandler);
+    this.audioElement.addEventListener('ended', this.primaryEndedHandler);
+  }
 
-    this.audioElement.addEventListener('play', () => {
-      this.onStateChangeListeners.forEach((fn) => fn(true));
-    });
-
-    this.audioElement.addEventListener('pause', () => {
-      this.onStateChangeListeners.forEach((fn) => fn(false));
-    });
-
-    this.audioElement.addEventListener('ended', () => {
-      this.onEndedListeners.forEach((fn) => fn());
-    });
+  private detachPrimaryListeners(): void {
+    this.audioElement.removeEventListener('timeupdate', this.primaryTimeUpdateHandler);
+    this.audioElement.removeEventListener('play', this.primaryPlayHandler);
+    this.audioElement.removeEventListener('pause', this.primaryPauseHandler);
+    this.audioElement.removeEventListener('ended', this.primaryEndedHandler);
   }
 
   private ensureAudioContext(): AudioContext {
@@ -167,71 +195,188 @@ export class AudioEngine {
 
   // --- PLAYBACK ---
   async loadTrack(item: AudioItem): Promise<void> {
-    this.ensureAudioContext();
+    this.cancelCrossfade();
+    this.audioElement.pause();
     this.crossfadeAudioElement.pause();
+    this.crossfadeAudioElement.removeAttribute('src');
+    this.crossfadeAudioElement.load();
+    this.currentTrack = item;
+    this.standbyTrack = null;
+    this.crossfadeTrackId = null;
+    this.crossfadeTrackUri = null;
+    this.ensureAudioContext();
     this.audioElement.src = item.uri;
     this.audioElement.load();
-    this.applyCrossfaderGains();
+    this.setGainImmediately(this.currentTrackGain, 1);
+    this.setGainImmediately(this.crossfadeTrackGain, 0);
   }
 
-  /** Load the next queued song on a second source for true, overlapping crossfades. */
+  /** Preload the next song on a silent second source for a real automatic overlap. */
   loadCrossfadeTrack(item: AudioItem | null): void {
-    if (!item) {
+    if (!item || this.crossfadeDurationSeconds <= 0 || item.id === this.currentTrack?.id) {
+      if (this.crossfadeInProgress) this.cancelCrossfade();
+      this.standbyTrack = null;
+      this.crossfadeTrackId = null;
+      this.crossfadeTrackUri = null;
       this.crossfadeAudioElement.pause();
       this.crossfadeAudioElement.removeAttribute('src');
       this.crossfadeAudioElement.load();
-      this.crossfadeTrackId = null;
-      this.crossfadeTrackUri = null;
-      this.applyCrossfaderGains();
+      this.setGainImmediately(this.crossfadeTrackGain, 0);
       return;
     }
-    if (this.crossfadeTrackId === item.id && this.crossfadeTrackUri === item.uri) return;
-
-    const shouldResumePreview = this.crossfadePosition > 0 && this.isPlaying;
+    if (this.crossfadeTrackId === item.id && this.crossfadeTrackUri === item.uri) {
+      this.standbyTrack = item;
+      return;
+    }
+    if (this.crossfadeInProgress) this.cancelCrossfade();
     this.crossfadeAudioElement.pause();
     this.ensureAudioContext();
+    this.standbyTrack = item;
     this.crossfadeTrackId = item.id;
     this.crossfadeTrackUri = item.uri;
     this.crossfadeAudioElement.src = item.uri;
     this.crossfadeAudioElement.load();
-    this.applyCrossfaderGains();
-    if (shouldResumePreview) void this.startCrossfadePreview();
+    this.setGainImmediately(this.crossfadeTrackGain, 0);
   }
 
-  get crossfaderValue(): number {
-    return this.crossfadePosition;
+  /** Set the natural overlap between sequential songs, in whole seconds (0–15). */
+  setCrossfadeDuration(seconds: number): void {
+    const next = Math.max(0, Math.min(15, Math.round(Number.isFinite(seconds) ? seconds : 0)));
+    this.crossfadeDurationSeconds = next;
+    if (next === 0 && this.crossfadeInProgress) this.cancelCrossfade();
   }
 
-  setCrossfader(value: number, startPreview = true): void {
-    this.crossfadePosition = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-    this.applyCrossfaderGains();
-    if (this.crossfadePosition <= 0.001) {
-      this.crossfadeAudioElement.pause();
+  get crossfadeDuration(): number {
+    return this.crossfadeDurationSeconds;
+  }
+
+  private setGainImmediately(node: GainNode | null, value: number): void {
+    if (!node || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    node.gain.cancelScheduledValues(now);
+    node.gain.setValueAtTime(value, now);
+  }
+
+  private clearCrossfadeTimer(): void {
+    if (this.crossfadeTimer !== null) {
+      clearTimeout(this.crossfadeTimer);
+      this.crossfadeTimer = null;
+    }
+  }
+
+  private getCrossfadeElapsedMs(): number {
+    return this.crossfadeElapsedMs +
+      (this.crossfadeStartedAtMs > 0 ? Math.max(0, Date.now() - this.crossfadeStartedAtMs) : 0);
+  }
+
+  private cancelCrossfade(): void {
+    this.clearCrossfadeTimer();
+    this.crossfadeInProgress = false;
+    this.crossfadeDurationMs = 0;
+    this.crossfadeElapsedMs = 0;
+    this.crossfadeStartedAtMs = 0;
+    this.crossfadeAudioElement.pause();
+    try { this.crossfadeAudioElement.currentTime = 0; } catch { /* metadata may not be ready */ }
+    this.setGainImmediately(this.currentTrackGain, 1);
+    this.setGainImmediately(this.crossfadeTrackGain, 0);
+  }
+
+  private checkAutomaticCrossfade(): void {
+    if (
+      this.crossfadeDurationSeconds <= 0 || this.crossfadeInProgress || !this.isPlaying ||
+      !this.currentTrack || !this.standbyTrack || this.standbyTrack.id === this.currentTrack.id
+    ) return;
+    const totalMs = this.durationMs;
+    if (!Number.isFinite(totalMs) || totalMs <= 0) return;
+    const remainingMs = totalMs - this.currentTimeMs;
+    if (remainingMs <= 0 || remainingMs > this.crossfadeDurationSeconds * 1000) return;
+    void this.beginAutomaticCrossfade(remainingMs);
+  }
+
+  private async beginAutomaticCrossfade(remainingMs: number): Promise<void> {
+    if (this.crossfadeInProgress || !this.standbyTrack || this.crossfadeDurationSeconds <= 0) return;
+    this.crossfadeInProgress = true;
+    this.crossfadeDurationMs = Math.max(1, Math.min(remainingMs, this.crossfadeDurationSeconds * 1000));
+    this.crossfadeElapsedMs = 0;
+    this.crossfadeStartedAtMs = 0;
+    try {
+      const context = this.ensureAudioContext();
+      if (context.state === 'suspended') await context.resume();
+      this.crossfadeAudioElement.currentTime = 0;
+      await this.crossfadeAudioElement.play();
+    } catch (error) {
+      console.warn('Automatic crossfade could not start:', error);
+      this.cancelCrossfade();
       return;
     }
-    // A real drag starts the preview; state restoration changes gain without autoplay.
-    if (startPreview && this.crossfadeAudioElement.src) void this.startCrossfadePreview();
+    if (this.crossfadeInProgress && this.standbyTrack) this.scheduleCrossfadeRamp(0);
   }
 
-  private applyCrossfaderGains(): void {
-    const leftGain = Math.cos(this.crossfadePosition * Math.PI / 2);
-    const rightGain = Math.sin(this.crossfadePosition * Math.PI / 2);
-    if (this.currentTrackGain && this.ctx) {
-      this.currentTrackGain.gain.setTargetAtTime(leftGain, this.ctx.currentTime, 0.015);
-    }
-    if (this.crossfadeTrackGain && this.ctx) {
-      this.crossfadeTrackGain.gain.setTargetAtTime(rightGain, this.ctx.currentTime, 0.015);
-    }
-  }
-
-  private async startCrossfadePreview(): Promise<void> {
+  private scheduleCrossfadeRamp(progress: number): void {
     const context = this.ensureAudioContext();
-    try {
-      if (context.state === 'suspended') await context.resume();
-      await this.crossfadeAudioElement.play();
-    } catch (err) {
-      console.warn('Crossfade preview could not start:', err);
+    const now = context.currentTime;
+    const normalized = Math.max(0, Math.min(1, progress));
+    const elapsedMs = normalized * this.crossfadeDurationMs;
+    const remainingMs = Math.max(0, this.crossfadeDurationMs - elapsedMs);
+    const curveLength = 96;
+    const currentCurve = new Float32Array(curveLength);
+    const standbyCurve = new Float32Array(curveLength);
+    for (let index = 0; index < curveLength; index += 1) {
+      const position = normalized + (1 - normalized) * (index / (curveLength - 1));
+      currentCurve[index] = Math.cos(position * Math.PI / 2);
+      standbyCurve[index] = Math.sin(position * Math.PI / 2);
     }
+    for (const [node, curve] of [
+      [this.currentTrackGain, currentCurve],
+      [this.crossfadeTrackGain, standbyCurve],
+    ] as Array<[GainNode | null, Float32Array]>) {
+      if (!node) continue;
+      node.gain.cancelScheduledValues(now);
+      if (remainingMs <= 8) node.gain.setValueAtTime(curve[curve.length - 1], now);
+      else node.gain.setValueCurveAtTime(curve, now, remainingMs / 1000);
+    }
+    this.crossfadeElapsedMs = elapsedMs;
+    this.crossfadeStartedAtMs = Date.now();
+    this.clearCrossfadeTimer();
+    this.crossfadeTimer = setTimeout(() => this.finishCrossfade(), remainingMs);
+  }
+
+  private finishCrossfade(): void {
+    const nextTrack = this.standbyTrack;
+    if (!this.crossfadeInProgress || !nextTrack) return;
+    this.clearCrossfadeTimer();
+    this.detachPrimaryListeners();
+    const oldPrimaryAudio = this.audioElement;
+    oldPrimaryAudio.pause();
+
+    // Promote the already-playing secondary source, retaining its elapsed time.
+    this.audioElement = this.crossfadeAudioElement;
+    this.crossfadeAudioElement = oldPrimaryAudio;
+    const oldPrimarySource = this.sourceNode;
+    this.sourceNode = this.crossfadeSourceNode;
+    this.crossfadeSourceNode = oldPrimarySource;
+    const oldPrimaryGain = this.currentTrackGain;
+    this.currentTrackGain = this.crossfadeTrackGain;
+    this.crossfadeTrackGain = oldPrimaryGain;
+
+    this.currentTrack = nextTrack;
+    this.standbyTrack = null;
+    this.crossfadeTrackId = null;
+    this.crossfadeTrackUri = null;
+    this.crossfadeInProgress = false;
+    this.crossfadeDurationMs = 0;
+    this.crossfadeElapsedMs = 0;
+    this.crossfadeStartedAtMs = 0;
+    this.setGainImmediately(this.currentTrackGain, 1);
+    this.setGainImmediately(this.crossfadeTrackGain, 0);
+
+    this.crossfadeAudioElement.pause();
+    this.crossfadeAudioElement.removeAttribute('src');
+    this.crossfadeAudioElement.load();
+    this.attachPrimaryListeners();
+    this.onTrackTransitionListeners.forEach((listener) => {
+      try { listener(nextTrack); } catch (error) { console.warn('Crossfade transition listener failed:', error); }
+    });
   }
 
   async play(): Promise<void> {
@@ -239,8 +384,12 @@ export class AudioEngine {
     try {
       if (context.state === 'suspended') await context.resume();
       await this.audioElement.play();
-      if (this.crossfadePosition > 0.001 && this.crossfadeAudioElement.src) {
-        void this.startCrossfadePreview();
+      if (this.crossfadeInProgress && this.standbyTrack) {
+        await this.crossfadeAudioElement.play();
+        const progress = this.crossfadeDurationMs > 0
+          ? this.getCrossfadeElapsedMs() / this.crossfadeDurationMs
+          : 0;
+        this.scheduleCrossfadeRamp(progress);
       }
     } catch (err) {
       console.warn('Audio playback waiting for interaction:', err);
@@ -248,41 +397,38 @@ export class AudioEngine {
   }
 
   pause(): void {
+    if (this.crossfadeInProgress) {
+      this.crossfadeElapsedMs = Math.min(this.crossfadeDurationMs, this.getCrossfadeElapsedMs());
+      this.crossfadeStartedAtMs = 0;
+      this.clearCrossfadeTimer();
+      const progress = this.crossfadeDurationMs > 0 ? this.crossfadeElapsedMs / this.crossfadeDurationMs : 0;
+      this.setGainImmediately(this.currentTrackGain, Math.cos(progress * Math.PI / 2));
+      this.setGainImmediately(this.crossfadeTrackGain, Math.sin(progress * Math.PI / 2));
+    }
     this.audioElement.pause();
     this.crossfadeAudioElement.pause();
   }
 
   seekTo(positionMs: number): void {
-    if (!Number.isNaN(positionMs) && positionMs >= 0) {
+    if (!Number.isNaN(positionMs) && Number.isFinite(positionMs) && positionMs >= 0) {
+      if (this.crossfadeInProgress) this.cancelCrossfade();
       this.audioElement.currentTime = positionMs / 1000;
     }
   }
 
   setVolume(volume: number): void {
-    // Keep the HTML media element at unity gain. The Web Audio master gain is
-    // the single volume control; applying both attenuations made volume nonlinear.
     this.masterVolume = Math.max(0, Math.min(1, volume));
     this.audioElement.volume = 1;
-    if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.02);
-    }
+    if (this.masterGain && this.ctx) this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.02);
   }
 
   setPlaybackRate(rate: number): void {
     this.audioElement.playbackRate = Math.max(0.25, Math.min(2.0, rate));
   }
 
-  get isPlaying(): boolean {
-    return !this.audioElement.paused && !this.audioElement.ended;
-  }
-
-  get currentTimeMs(): number {
-    return (this.audioElement.currentTime || 0) * 1000;
-  }
-
-  get durationMs(): number {
-    return (this.audioElement.duration || 0) * 1000;
-  }
+  get isPlaying(): boolean { return !this.audioElement.paused && !this.audioElement.ended; }
+  get currentTimeMs(): number { return (this.audioElement.currentTime || 0) * 1000; }
+  get durationMs(): number { return (this.audioElement.duration || 0) * 1000; }
 
   // --- EQUALIZER & EFFECTS ---
   get eqEnabled(): boolean {
@@ -435,6 +581,13 @@ export class AudioEngine {
     this.onEndedListeners.push(fn);
     return () => {
       this.onEndedListeners = this.onEndedListeners.filter((l) => l !== fn);
+    };
+  }
+
+  onTrackTransition(fn: (track: AudioItem) => void): () => void {
+    this.onTrackTransitionListeners.push(fn);
+    return () => {
+      this.onTrackTransitionListeners = this.onTrackTransitionListeners.filter((listener) => listener !== fn);
     };
   }
 }

@@ -102,7 +102,9 @@ jobs:
           $zipPath = Join-Path $env:GITHUB_WORKSPACE $zipName
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipPath -Force
           if (-not (Test-Path $zipPath)) { throw "The Windows PC release ZIP was not created." }
-          Write-Host "Created $zipName"
+          $latestZipPath = Join-Path $env:GITHUB_WORKSPACE 'DJ-Desktop-PC-Latest.zip'
+          Copy-Item -LiteralPath $zipPath -Destination $latestZipPath -Force
+          Write-Host "Created $zipName and stable latest-package alias"
 
       - name: Publish PC release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -112,8 +114,10 @@ jobs:
           name: DJ Desktop Studio v${{ steps.version.outputs.version }}
           body: |
             Automated Windows PC release.
-            Includes the production app, setup/uninstall files, live online music streaming, playlist downloads, and the in-app update checker with Windows self-updater.
-          files: DJ-Desktop-PC-v${{ steps.version.outputs.version }}.zip
+            Includes the complete app and setup/uninstall files, automatic song crossfade (0–15 seconds), DJ Beat Sync, BPM detection, AI Studio, and the Windows self-updater.
+          files: |
+            DJ-Desktop-PC-v${{ steps.version.outputs.version }}.zip
+            DJ-Desktop-PC-Latest.zip
           overwrite_files: true
           make_latest: true
         env:
