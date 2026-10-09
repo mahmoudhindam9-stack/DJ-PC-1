@@ -19,6 +19,182 @@ import { deckAEngine, deckBEngine, DJEffectType } from '../../audio/DJDeckEngine
 import { samplerEngine } from '../../audio/SamplerEngine';
 import { AUDIO_INPUT_ACCEPT, pickLocalAudioFolder } from '../../utils/fileImporter';
 
+
+type MixerBank = 'A' | 'B' | 'C' | 'D';
+
+interface SavedDeckSettings {
+  volume: number;
+  pitch: number;
+  effect: DJEffectType;
+  fxAmount: number;
+}
+
+interface SavedMixerSettings {
+  crossfader: number;
+  selectedBank: MixerBank;
+  samplerVolume: number;
+  deckA: SavedDeckSettings;
+  deckB: SavedDeckSettings;
+}
+
+const DJ_MIXER_STATE_KEY = 'dj-mixer-state-v1';
+const DJ_MIXER_SCROLL_KEY = 'dj-mixer-scroll-v1';
+const SAVED_DJ_EFFECTS: DJEffectType[] = [
+  'none', 'fx_filter', 'fx_delay', 'fx_reverb', 'fx_flanger', 'fx_phaser',
+  'fx_bitcrush', 'fx_distortion', 'fx_compressor',
+  'voice_woman', 'voice_kid', 'voice_chipmunk', 'voice_monster', 'voice_demon', 'voice_giant',
+];
+
+const clampMixerValue = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
+
+function readSavedMixerSettings(): SavedMixerSettings {
+  const defaults: SavedMixerSettings = {
+    crossfader: 0.5,
+    selectedBank: 'A',
+    samplerVolume: 0.9,
+    deckA: { volume: 1, pitch: 1, effect: 'none', fxAmount: 0.5 },
+    deckB: { volume: 1, pitch: 1, effect: 'none', fxAmount: 0.5 },
+  };
+  if (typeof window === 'undefined') return defaults;
+
+  try {
+    const serialized = window.localStorage.getItem(DJ_MIXER_STATE_KEY);
+    if (!serialized) return defaults;
+    const parsed = JSON.parse(serialized) as Record<string, unknown>;
+    const readDeck = (value: unknown, fallback: SavedDeckSettings): SavedDeckSettings => {
+      if (!value || typeof value !== 'object') return fallback;
+      const raw = value as Record<string, unknown>;
+      return {
+        volume: typeof raw.volume === 'number' ? clampMixerValue(raw.volume, 0, 1) : fallback.volume,
+        pitch: typeof raw.pitch === 'number' ? clampMixerValue(raw.pitch, 0.5, 1.5) : fallback.pitch,
+        effect: typeof raw.effect === 'string' && SAVED_DJ_EFFECTS.includes(raw.effect as DJEffectType)
+          ? raw.effect as DJEffectType
+          : fallback.effect,
+        fxAmount: typeof raw.fxAmount === 'number' ? clampMixerValue(raw.fxAmount, 0, 1) : fallback.fxAmount,
+      };
+    };
+    const bank = parsed.selectedBank;
+    return {
+      crossfader: typeof parsed.crossfader === 'number' ? clampMixerValue(parsed.crossfader, 0, 1) : defaults.crossfader,
+      selectedBank: bank === 'A' || bank === 'B' || bank === 'C' || bank === 'D' ? bank : defaults.selectedBank,
+      samplerVolume: typeof parsed.samplerVolume === 'number' ? clampMixerValue(parsed.samplerVolume, 0, 1) : defaults.samplerVolume,
+      deckA: readDeck(parsed.deckA, defaults.deckA),
+      deckB: readDeck(parsed.deckB, defaults.deckB),
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+interface RotaryVolumeKnobProps {
+  value: number;
+  accent: string;
+  textColor: string;
+  mutedColor: string;
+  label: string;
+  onChange: (value: number) => void;
+}
+
+const RotaryVolumeKnob: React.FC<RotaryVolumeKnobProps> = ({
+  value, accent, textColor, mutedColor, label, onChange,
+}) => {
+  const dragRef = useRef<{ pointerId: number; startY: number; startValue: number } | null>(null);
+  const normalized = clampMixerValue(value, 0, 1);
+  const angle = -135 + normalized * 270;
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    let next: number | null = null;
+    switch (event.key) {
+      case 'ArrowUp':
+      case 'ArrowRight':
+        next = normalized + 0.02;
+        break;
+      case 'ArrowDown':
+      case 'ArrowLeft':
+        next = normalized - 0.02;
+        break;
+      case 'PageUp':
+        next = normalized + 0.1;
+        break;
+      case 'PageDown':
+        next = normalized - 0.1;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    onChange(clampMixerValue(next, 0, 1));
+  };
+
+  return (
+    <div className="flex min-w-[64px] flex-col items-center gap-1 select-none">
+      <span className="text-[9px] font-bold tracking-[0.14em]" style={{ color: mutedColor }}>{label}</span>
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(normalized * 100)}
+        aria-valuetext={Math.round(normalized * 100) + '%'}
+        onKeyDown={handleKeyDown}
+        onWheel={(event) => {
+          event.preventDefault();
+          onChange(clampMixerValue(normalized + (event.deltaY < 0 ? 0.02 : -0.02), 0, 1));
+        }}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          dragRef.current = { pointerId: event.pointerId, startY: event.clientY, startValue: normalized };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          onChange(clampMixerValue(drag.startValue + (drag.startY - event.clientY) / 120, 0, 1));
+        }}
+        onPointerUp={(event) => {
+          if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+        }}
+        onPointerCancel={() => { dragRef.current = null; }}
+        className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 cursor-ns-resize"
+        style={{ touchAction: 'none', lineHeight: 0 }}
+      >
+        <div
+          className="relative rounded-full border"
+          style={{
+            width: 54,
+            height: 54,
+            borderColor: accent + '99',
+            background: 'radial-gradient(circle at 28% 22%, ' + accent + '55, #111827 76%)',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.28), inset 0 1px 2px rgba(255,255,255,0.12)',
+          }}
+        >
+          <div
+            className="absolute left-1/2 top-[7px] h-[20px] w-[3px] rounded-full"
+            style={{
+              backgroundColor: accent,
+              transform: 'translateX(-50%) rotate(' + angle + 'deg)',
+              transformOrigin: '50% 20px',
+              boxShadow: '0 0 8px ' + accent + '99',
+            }}
+          />
+          <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ backgroundColor: accent }} />
+        </div>
+      </div>
+      <span className="text-[11px] font-mono font-bold tabular-nums" style={{ color: textColor }}>
+        {Math.round(normalized * 100)}%
+      </span>
+    </div>
+  );
+};
+
 interface DJMixerScreenProps {
   library: AudioItem[];
   themeColors: ThemeColors;
@@ -34,7 +210,10 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   onPauseMainPlayer,
   onImportFiles,
 }) => {
-  const [crossfader, setCrossfader] = useState(0.5); // 0 = Deck A only, 1 = Deck B only
+  const [savedSettings] = useState<SavedMixerSettings>(() => readSavedMixerSettings());
+  const scrollPositionRef = useRef(0);
+  const scrollSaveTimerRef = useRef<number | null>(null);
+  const [crossfader, setCrossfader] = useState(savedSettings.crossfader); // 0 = Deck A only, 1 = Deck B only
   const [deckAState, setDeckAState] = useState({
     track: deckAEngine.currentTrack,
     isPlaying: deckAEngine.isPlaying,
@@ -43,6 +222,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     pitch: deckAEngine.pitch,
     effect: deckAEngine.activeEffect,
     fxAmount: deckAEngine.fxAmount,
+    volume: deckAEngine.volume,
   });
 
   const [deckBState, setDeckBState] = useState({
@@ -53,10 +233,11 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     pitch: deckBEngine.pitch,
     effect: deckBEngine.activeEffect,
     fxAmount: deckBEngine.fxAmount,
+    volume: deckBEngine.volume,
   });
 
-  const [selectedBank, setSelectedBank] = useState<'A' | 'B' | 'C' | 'D'>('A');
-  const [samplerVolume, setSamplerVolume] = useState(0.9);
+  const [selectedBank, setSelectedBank] = useState<MixerBank>(savedSettings.selectedBank);
+  const [samplerVolume, setSamplerVolume] = useState(savedSettings.samplerVolume);
   const [trackSelectorDeck, setTrackSelectorDeck] = useState<'A' | 'B' | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,6 +271,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
         pitch: deckAEngine.pitch,
         effect: deckAEngine.activeEffect,
         fxAmount: deckAEngine.fxAmount,
+        volume: deckAEngine.volume,
       });
     });
 
@@ -102,12 +284,81 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
         pitch: deckBEngine.pitch,
         effect: deckBEngine.activeEffect,
         fxAmount: deckBEngine.fxAmount,
+        volume: deckBEngine.volume,
       });
     });
 
     return () => {
       unsubA();
       unsubB();
+    };
+  }, []);
+
+
+  // Restore and persist the complete DJ mixer control state between screen visits and app restarts.
+  useEffect(() => {
+    deckAEngine.setDeckVolume(savedSettings.deckA.volume);
+    deckAEngine.setPitch(savedSettings.deckA.pitch);
+    deckAEngine.setEffect(savedSettings.deckA.effect);
+    deckAEngine.setFxAmount(savedSettings.deckA.fxAmount);
+    deckBEngine.setDeckVolume(savedSettings.deckB.volume);
+    deckBEngine.setPitch(savedSettings.deckB.pitch);
+    deckBEngine.setEffect(savedSettings.deckB.effect);
+    deckBEngine.setFxAmount(savedSettings.deckB.fxAmount);
+    samplerEngine.volume = savedSettings.samplerVolume;
+  }, [savedSettings]);
+
+  useEffect(() => {
+    try {
+      const stateToSave: SavedMixerSettings = {
+        crossfader,
+        selectedBank,
+        samplerVolume,
+        deckA: {
+          volume: deckAState.volume,
+          pitch: deckAState.pitch,
+          effect: deckAState.effect,
+          fxAmount: deckAState.fxAmount,
+        },
+        deckB: {
+          volume: deckBState.volume,
+          pitch: deckBState.pitch,
+          effect: deckBState.effect,
+          fxAmount: deckBState.fxAmount,
+        },
+      };
+      window.localStorage.setItem(DJ_MIXER_STATE_KEY, JSON.stringify(stateToSave));
+    } catch {
+      // Local persistence is optional in restricted browser contexts.
+    }
+  }, [
+    crossfader, selectedBank, samplerVolume,
+    deckAState.volume, deckAState.pitch, deckAState.effect, deckAState.fxAmount,
+    deckBState.volume, deckBState.pitch, deckBState.effect, deckBState.fxAmount,
+  ]);
+
+  useEffect(() => {
+    let restoreFrame = 0;
+    try {
+      const savedScroll = Number(window.localStorage.getItem(DJ_MIXER_SCROLL_KEY));
+      if (Number.isFinite(savedScroll) && savedScroll > 0) {
+        scrollPositionRef.current = savedScroll;
+        restoreFrame = window.requestAnimationFrame(() => {
+          const screen = document.getElementById('dj-mixer-screen');
+          if (screen) screen.scrollTop = savedScroll;
+        });
+      }
+    } catch {
+      // Ignore unavailable storage.
+    }
+    return () => {
+      if (restoreFrame) window.cancelAnimationFrame(restoreFrame);
+      if (scrollSaveTimerRef.current !== null) window.clearTimeout(scrollSaveTimerRef.current);
+      try {
+        window.localStorage.setItem(DJ_MIXER_SCROLL_KEY, String(scrollPositionRef.current));
+      } catch {
+        // Ignore unavailable storage.
+      }
     };
   }, []);
 
@@ -172,6 +423,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     { id: 'fx_phaser', name: '🌈 Phaser' },
     { id: 'fx_bitcrush', name: '👾 Bitcrush' },
     { id: 'fx_distortion', name: '🔥 Distort' },
+    { id: 'fx_compressor', name: '🎚️ Compressor' },
     { id: 'voice_woman', name: '👩 Woman Voice' },
     { id: 'voice_kid', name: '👶 Kid Voice' },
     { id: 'voice_chipmunk', name: '🐿️ Chipmunk' },
@@ -185,6 +437,13 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   return (
     <div
       id="dj-mixer-screen"
+      onScroll={(event) => {
+        scrollPositionRef.current = event.currentTarget.scrollTop;
+        if (scrollSaveTimerRef.current !== null) window.clearTimeout(scrollSaveTimerRef.current);
+        scrollSaveTimerRef.current = window.setTimeout(() => {
+          try { window.localStorage.setItem(DJ_MIXER_SCROLL_KEY, String(scrollPositionRef.current)); } catch { /* optional persistence */ }
+        }, 120);
+      }}
       className="flex-1 flex flex-col h-full overflow-y-auto select-none p-4 space-y-4"
       style={{
         backgroundColor: themeColors.background,
@@ -339,6 +598,22 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
               {deckAState.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
               <span>{deckAState.isPlaying ? 'PAUSE' : 'PLAY'}</span>
             </button>
+          </div>
+
+          {/* Independent DECK A volume knob */}
+          <div className="flex items-center justify-between gap-3 rounded-xl border p-2.5" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentA + '55' }}>
+            <div className="min-w-0">
+              <div className="text-[11px] font-black tracking-wide">{isArabic ? 'مستوى صوت DECK A' : 'DECK A VOLUME'}</div>
+              <div className="mt-1 text-[10px] opacity-60">{isArabic ? 'تحكم مستقل في مستوى الصوت' : 'Independent channel level'}</div>
+            </div>
+            <RotaryVolumeKnob
+              value={deckAState.volume}
+              onChange={(value) => deckAEngine.setDeckVolume(value)}
+              accent={themeColors.accentA}
+              textColor={themeColors.textPrimary}
+              mutedColor={themeColors.textMuted}
+              label={isArabic ? 'الصوت' : 'VOLUME'}
+            />
           </div>
 
           {/* Seek Scrubber */}
@@ -514,6 +789,22 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
               {deckBState.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
               <span>{deckBState.isPlaying ? 'PAUSE' : 'PLAY'}</span>
             </button>
+          </div>
+
+          {/* Independent DECK B volume knob */}
+          <div className="flex items-center justify-between gap-3 rounded-xl border p-2.5" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentB + '55' }}>
+            <div className="min-w-0">
+              <div className="text-[11px] font-black tracking-wide">{isArabic ? 'مستوى صوت DECK B' : 'DECK B VOLUME'}</div>
+              <div className="mt-1 text-[10px] opacity-60">{isArabic ? 'تحكم مستقل في مستوى الصوت' : 'Independent channel level'}</div>
+            </div>
+            <RotaryVolumeKnob
+              value={deckBState.volume}
+              onChange={(value) => deckBEngine.setDeckVolume(value)}
+              accent={themeColors.accentB}
+              textColor={themeColors.textPrimary}
+              mutedColor={themeColors.textMuted}
+              label={isArabic ? 'الصوت' : 'VOLUME'}
+            />
           </div>
 
           {/* Seek Scrubber */}
