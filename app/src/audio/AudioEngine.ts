@@ -14,6 +14,7 @@ export class AudioEngine {
   private virtualizerPanner: StereoPannerNode | null = null;
   private masterGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
+  private masterVolume = 0.85;
 
   // State
   private isInitialized = false;
@@ -110,7 +111,7 @@ export class AudioEngine {
       }
 
       this.masterGain = ctx.createGain();
-      this.masterGain.gain.value = 1.0;
+      this.masterGain.gain.value = this.masterVolume;
 
       this.analyser = ctx.createAnalyser();
       this.analyser.fftSize = 128;
@@ -154,8 +155,9 @@ export class AudioEngine {
   }
 
   async play(): Promise<void> {
-    this.ensureAudioContext();
+    const context = this.ensureAudioContext();
     try {
+      if (context.state === 'suspended') await context.resume();
       await this.audioElement.play();
     } catch (err) {
       console.warn('Audio playback waiting for interaction:', err);
@@ -173,10 +175,12 @@ export class AudioEngine {
   }
 
   setVolume(volume: number): void {
-    const clamped = Math.max(0, Math.min(1, volume));
-    this.audioElement.volume = clamped;
+    // Keep the HTML media element at unity gain. The Web Audio master gain is
+    // the single volume control; applying both attenuations made volume nonlinear.
+    this.masterVolume = Math.max(0, Math.min(1, volume));
+    this.audioElement.volume = 1;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.02);
     }
   }
 

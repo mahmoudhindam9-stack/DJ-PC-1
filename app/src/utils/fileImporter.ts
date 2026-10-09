@@ -35,20 +35,20 @@ export function getAudioDurationMs(file: File): Promise<number> {
       const url = URL.createObjectURL(file);
       const audio = new Audio();
       audio.preload = 'metadata';
-      audio.src = url;
-
       let resolved = false;
+      let timeoutId: number | undefined;
       const cleanup = () => {
-        if (!resolved) {
-          resolved = true;
-          URL.revokeObjectURL(url);
-        }
+        if (resolved) return;
+        resolved = true;
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+        URL.revokeObjectURL(url);
+        audio.removeAttribute('src');
       };
 
       audio.onloadedmetadata = () => {
-        const d = audio.duration;
+        const duration = audio.duration;
         cleanup();
-        resolve(isFinite(d) && d > 0 ? Math.round(d * 1000) : 0);
+        resolve(Number.isFinite(duration) && duration > 0 ? Math.round(duration * 1000) : 0);
       };
 
       audio.onerror = () => {
@@ -56,8 +56,8 @@ export function getAudioDurationMs(file: File): Promise<number> {
         resolve(0);
       };
 
-      // Fallback timeout
-      setTimeout(() => {
+      audio.src = url;
+      timeoutId = window.setTimeout(() => {
         cleanup();
         resolve(0);
       }, 3000);
@@ -102,8 +102,8 @@ export function parseAudioMetadata(file: File): {
   }
 
   // Extract album/folder name from relative path if available
-  const relativePath = (file as unknown as { webkitRelativePath?: string })
-    .webkitRelativePath;
+  const pathMetadata = file as File & { webkitRelativePath?: string; relativePath?: string };
+  const relativePath = pathMetadata.webkitRelativePath || pathMetadata.relativePath;
   if (relativePath && relativePath.includes('/')) {
     const segments = relativePath.split('/');
     if (segments.length >= 2) {
@@ -147,43 +147,123 @@ export async function parseAudioFile(
 }
 
 /**
- * Recursively extracts all files from a directory entry (for drag & drop folder support)
+ * Attach a relative path to browser File objects so folder/album metadata survives import.
+ * This is metadata only; the original file bytes are not copied into another allocation.
+ */
+function attachRelativePath(file: File, relativePath: string): File {
+  try {
+    Object.defineProperty(file, 'relativePath', {
+      configurable: true,
+      enumerable: false,
+      value: relativePath,
+    });
+  } catch {
+    // File input's webkitRelativePath remains available as a fallback where present.
+  }
+  return file;
+}
+
+/**
+ * Recursively extracts files from a dropped directory, including the relative path.
  */
 async function readEntriesRecursively(
-  entry: FileSystemEntry
+  entry: FileSystemEntry,
+  relativeDirectory = ''
 ): Promise<File[]> {
   if (entry.isFile) {
     return new Promise((resolve) => {
       (entry as FileSystemFileEntry).file(
-        (file) => resolve(isAudioFile(file) ? [file] : []),
+        (file) => {
+          if (!isAudioFile(file)) {
+            resolve([]);
+            return;
+          }
+          const relativePath = relativeDirectory ? relativeDirectory + '/' + file.name : file.name;
+          resolve([attachRelativePath(file, relativePath)]);
+        },
         () => resolve([])
       );
     });
-  } else if (entry.isDirectory) {
-    const dirReader = (entry as FileSystemDirectoryEntry).createReader();
-    const files: File[] = [];
-
-    const readBatch = async (): Promise<FileSystemEntry[]> => {
-      return new Promise((resolve) => {
-        dirReader.readEntries(
-          (entries) => resolve(entries || []),
-          () => resolve([])
-        );
-      });
-    };
-
-    let batch = await readBatch();
-    while (batch.length > 0) {
-      for (const childEntry of batch) {
-        const nestedFiles = await readEntriesRecursively(childEntry);
-        files.push(...nestedFiles);
-      }
-      batch = await readBatch();
-    }
-
-    return files;
   }
-  return [];
+  if (!entry.isDirectory) return [];
+
+  const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+  const files: File[] = [];
+  const readBatch = async (): Promise<FileSystemEntry[]> => new Promise((resolve) => {
+    dirReader.readEntries((entries) => resolve(entries || []), () => resolve([]));
+  });
+
+  let batch = await readBatch();
+  while (batch.length > 0) {
+    for (const childEntry of batch) {
+      const childDirectory = childEntry.isDirectory
+        ? (relativeDirectory ? relativeDirectory + '/' : '') + childEntry.name
+        : relativeDirectory;
+      files.push(...await readEntriesRecursively(childEntry, childDirectory));
+    }
+    batch = await readBatch();
+  }
+  return files;
+}
+
+interface LocalFileHandle {
+  kind: 'file';
+  name: string;
+  getFile(): Promise<File>;
+}
+
+interface LocalDirectoryHandle {
+  kind: 'directory';
+  name: string;
+  values(): AsyncIterable<LocalDirectoryHandle | LocalFileHandle>;
+}
+
+type LocalPickerWindow = Window & {
+  showDirectoryPicker?: () => Promise<LocalDirectoryHandle>;
+};
+
+export function supportsLocalFolderPicker(): boolean {
+  return typeof (window as LocalPickerWindow).showDirectoryPicker === 'function';
+}
+
+/**
+ * Use the native Chromium directory picker when available, then recursively read
+ * supported audio files. Returns undefined when the API is unavailable and null
+ * when the user cancels; both cases allow the UI to handle fallback/cancellation.
+ */
+export async function pickLocalAudioFolder(): Promise<File[] | null | undefined> {
+  const picker = (window as LocalPickerWindow).showDirectoryPicker;
+  if (!picker) return undefined;
+
+  let root: LocalDirectoryHandle;
+  try {
+    root = await picker.call(window);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return null;
+    throw error;
+  }
+
+  const files: File[] = [];
+  const visit = async (directory: LocalDirectoryHandle, relativeDirectory: string): Promise<void> => {
+    for await (const entry of directory.values()) {
+      if (entry.kind === 'directory') {
+        const childPath = relativeDirectory ? relativeDirectory + '/' + entry.name : entry.name;
+        await visit(entry, childPath);
+      } else {
+        try {
+          const file = await entry.getFile();
+          if (!isAudioFile(file)) continue;
+          const relativePath = relativeDirectory ? relativeDirectory + '/' + file.name : file.name;
+          files.push(attachRelativePath(file, relativePath));
+        } catch (error) {
+          console.warn('Skipping an unreadable local audio file:', entry.name, error);
+        }
+      }
+    }
+  };
+
+  await visit(root, '');
+  return files;
 }
 
 /**
@@ -244,14 +324,28 @@ export async function batchImportAudioFiles(
   const rawList: File[] = Array.isArray(files) ? files : Array.from(files);
   const audioFiles = rawList.filter(isAudioFile);
 
-  const items: AudioItem[] = [];
-  for (let i = 0; i < audioFiles.length; i++) {
-    const item = await parseAudioFile(audioFiles[i], i);
-    items.push(item);
-    if (onProgress) {
-      onProgress(i + 1, audioFiles.length);
+  const items = new Array<AudioItem>(audioFiles.length);
+  let nextIndex = 0;
+  let processed = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= audioFiles.length) return;
+      try {
+        items[index] = await parseAudioFile(audioFiles[index], index);
+      } catch (error) {
+        console.warn('Could not import audio file:', audioFiles[index].name, error);
+      } finally {
+        processed += 1;
+        onProgress?.(processed, audioFiles.length);
+      }
     }
-  }
+  };
 
-  return items;
+  // Read metadata in small batches instead of waiting up to 3 seconds per song
+  // sequentially for large folders. Keep the results ordered by the original file list.
+  const concurrency = Math.min(4, audioFiles.length);
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return items.filter((item): item is AudioItem => Boolean(item));
 }

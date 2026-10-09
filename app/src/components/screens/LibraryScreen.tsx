@@ -26,6 +26,7 @@ import { downloadOnlineItem, getOnlineDownloadEndpoint } from '../../services/On
 import {
   AUDIO_INPUT_ACCEPT,
   extractFilesFromDataTransfer,
+  pickLocalAudioFolder,
 } from '../../utils/fileImporter';
 
 interface LibraryScreenProps {
@@ -39,7 +40,7 @@ interface LibraryScreenProps {
   onToggleFavorite: (song: AudioItem) => void;
   onDeleteSong: (id: string) => void;
   onClearLibrary?: () => void;
-  onImportFiles: (files: FileList | File[]) => void;
+  onImportFiles: (files: FileList | File[]) => Promise<number>;
   onNavigateToOnline?: () => void;
   onCreatePlaylist: (name: string) => void;
   onDeletePlaylist: (id: string) => void;
@@ -83,6 +84,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   const [playlistDownloadMessage, setPlaylistDownloadMessage] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<{ tone: 'success' | 'info' | 'error'; message: string } | null>(null);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
 
   const songFileInputRef = useRef<HTMLInputElement>(null);
@@ -173,42 +175,85 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
     return groups;
   }, [library]);
 
-  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setIsImporting(true);
-      try {
-        await onImportFiles(e.target.files);
-      } finally {
-        setIsImporting(false);
-        if (e.target) e.target.value = '';
-      }
-    }
-  };
-
-  const handleFolderInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setIsImporting(true);
-      try {
-        await onImportFiles(e.target.files);
-      } finally {
-        setIsImporting(false);
-        if (e.target) e.target.value = '';
-      }
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDraggingOver(false);
+  const importSelectedFiles = async (files: FileList | File[]) => {
+    setImportFeedback(null);
     setIsImporting(true);
     try {
-      const extracted = await extractFilesFromDataTransfer(e.dataTransfer);
-      if (extracted.length > 0) {
-        await onImportFiles(extracted);
+      const count = await onImportFiles(files);
+      if (count > 0) {
+        setImportFeedback({
+          tone: 'success',
+          message: isArabic ? 'تم استيراد ' + count + ' ملف صوتي بنجاح.' : 'Imported ' + count + ' audio track(s) successfully.',
+        });
+      } else if (count === 0) {
+        setImportFeedback({
+          tone: 'info',
+          message: isArabic ? 'لم يتم العثور على ملفات صوتية مدعومة في الاختيار.' : 'No supported audio files were found in that selection.',
+        });
+      } else {
+        setImportFeedback({
+          tone: 'error',
+          message: isArabic ? 'فشل الاستيراد. تحقق من مساحة التخزين ثم حاول مرة أخرى.' : 'Import failed. Check storage space and try again.',
+        });
       }
-    } catch (err) {
-      console.warn('Drop import error:', err);
+    } catch (error) {
+      console.warn('Audio import failed:', error);
+      setImportFeedback({
+        tone: 'error',
+        message: isArabic ? 'تعذر استيراد الملفات المحددة.' : 'Could not import the selected files.',
+      });
     } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleFileInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const files = input.files;
+    if (files && files.length > 0) await importSelectedFiles(files);
+    input.value = '';
+  };
+
+  const handleFolderInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const files = input.files;
+    if (files && files.length > 0) await importSelectedFiles(files);
+    input.value = '';
+  };
+
+  const handleChooseFolder = async () => {
+    if (isImporting) return;
+    setImportFeedback(null);
+    try {
+      const files = await pickLocalAudioFolder();
+      if (files === undefined) {
+        // Older browsers: keep the standard input[webkitdirectory] fallback.
+        folderFileInputRef.current?.click();
+        return;
+      }
+      if (files === null) return;
+      await importSelectedFiles(files);
+    } catch (error) {
+      console.warn('Could not read selected music folder:', error);
+      setImportFeedback({
+        tone: 'error',
+        message: isArabic ? 'تعذر قراءة المجلد المحلي. جرّب اختيار المجلد مرة أخرى.' : 'Could not read that local folder. Please try again.',
+      });
+    }
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDraggingOver(false);
+    try {
+      const extracted = await extractFilesFromDataTransfer(event.dataTransfer);
+      await importSelectedFiles(extracted);
+    } catch (error) {
+      console.warn('Drop import error:', error);
+      setImportFeedback({
+        tone: 'error',
+        message: isArabic ? 'تعذر قراءة الملفات المسحوبة.' : 'Could not read the dropped files.',
+      });
       setIsImporting(false);
     }
   };
@@ -295,7 +340,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
           {/* Button 2: Select Music Folder */}
           <button
-            onClick={() => folderFileInputRef.current?.click()}
+            onClick={() => { void handleChooseFolder(); }}
             disabled={isImporting}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shadow-sm flex items-center gap-1.5 transition-all hover:opacity-90 active:scale-95 border disabled:opacity-50"
             style={{
@@ -305,7 +350,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
             }}
             title={isArabic ? 'اختيار مجلد موسيقى كامل واستيراد جميع الأغاني بداخله' : 'Select and import an entire folder of music'}
           >
-            <FolderPlus className="w-4 h-4 text-amber-400" />
+            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderPlus className="w-4 h-4 text-amber-400" />}
             <span>{isArabic ? 'اختيار مجلد' : 'Select Folder'}</span>
           </button>
 
@@ -339,6 +384,20 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           )}
         </div>
       </div>
+
+      {importFeedback && (
+        <div
+          role="status"
+          className="mb-3 rounded-lg border px-3 py-2 text-xs"
+          style={{
+            borderColor: importFeedback.tone === 'success' ? '#16a34a66' : importFeedback.tone === 'error' ? '#ef444466' : themeColors.border,
+            color: importFeedback.tone === 'success' ? '#4ade80' : importFeedback.tone === 'error' ? '#fb7185' : themeColors.textSecondary,
+            backgroundColor: themeColors.surfaceVariant,
+          }}
+        >
+          {importFeedback.message}
+        </div>
+      )}
 
       {/* Sub Tabs Bar */}
       <div className="flex items-center justify-between border-b pb-2 mb-3 gap-2" style={{ borderColor: themeColors.border }}>

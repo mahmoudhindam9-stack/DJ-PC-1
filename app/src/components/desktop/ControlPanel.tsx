@@ -125,6 +125,24 @@ export const ControlPanel: React.FC = () => {
   const muted = colors?.textMuted || '#9aa7bd';
   const accent = colors?.primary || '#35a7ff';
   const border = colors?.border || '#253249';
+  const localDesktopBackend = window.location.protocol === 'http:' &&
+    (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost');
+  const topSupported = isTauri() || localDesktopBackend;
+
+  const applyWindowPin = async (enabled: boolean) => {
+    if (isTauri()) {
+      await getCurrentWindow().setAlwaysOnTop(enabled);
+      return;
+    }
+    if (!localDesktopBackend) throw new Error('Always-on-top needs the installed desktop launcher.');
+    const response = await fetch('/api/window/always-on-top', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const result = await response.json() as { ok?: boolean; error?: string };
+    if (!response.ok || !result.ok) throw new Error(result.error || 'The Windows window pin could not be changed.');
+  };
 
   const sendCommand = (command: DesktopControlCommand) => {
     channelRef.current?.postMessage({ type: 'command', command } satisfies DesktopControlMessage);
@@ -211,13 +229,22 @@ export const ControlPanel: React.FC = () => {
   };
 
   useEffect(() => {
+    document.title = 'DJ Control Center - DJ Desktop Studio';
+    document.documentElement.dir = isArabic ? 'rtl' : 'ltr';
+    document.documentElement.lang = isArabic ? 'ar' : 'en';
+  }, [isArabic]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    if (!isTauri()) return;
-    void getCurrentWindow().setAlwaysOnTop(alwaysOnTop).catch((error) => console.error('Could not set always-on-top:', error));
+    if (!topSupported) return;
+    void applyWindowPin(alwaysOnTop).catch((error) => {
+      console.warn('Could not apply always-on-top at startup:', error);
+      setAlwaysOnTop(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -255,19 +282,17 @@ export const ControlPanel: React.FC = () => {
   const dateText = useMemo(() => new Intl.DateTimeFormat(isArabic ? 'ar-EG' : undefined, {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   }).format(now), [now, isArabic]);
-  const topSupported = isTauri();
   const cardStyle: React.CSSProperties = { backgroundColor: surface, borderColor: border, color: foreground };
   const WeatherIcon = weather ? weatherIconForCode(weather.current.weather_code, weather.current.is_day === 1) : Cloud;
 
   const toggleAlwaysOnTop = async (checked: boolean) => {
     setAlwaysOnTop(checked);
     try { window.localStorage.setItem('dj-control-always-on-top', String(checked)); } catch { /* optional persistence */ }
-    if (!isTauri()) return;
     try {
-      await getCurrentWindow().setAlwaysOnTop(checked);
+      await applyWindowPin(checked);
     } catch (error) {
       console.error('Could not change always-on-top:', error);
-      setAlwaysOnTop(false);
+      setAlwaysOnTop(!checked);
     }
   };
 

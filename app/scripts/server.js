@@ -442,12 +442,70 @@ function sendJson(res, statusCode, data) {
   res.end(payload);
 }
 
+function readJsonBody(req, maxBytes = 4096) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString('utf8');
+      if (body.length > maxBytes) {
+        reject(new Error('Request body is too large.'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(body || '{}'));
+      } catch {
+        reject(new Error('Invalid JSON request body.'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 async function handleApi(req, res) {
   const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
 
   if (!requestUrl.pathname.startsWith('/api/')) return false;
 
   try {
+    if (requestUrl.pathname === '/api/window/always-on-top' && req.method === 'POST') {
+      if (process.platform !== 'win32') {
+        sendJson(res, 409, { ok: false, error: 'Native always-on-top is only available in the Windows desktop launcher.' });
+        return true;
+      }
+      const body = await readJsonBody(req);
+      if (typeof body.enabled !== 'boolean') {
+        sendJson(res, 400, { ok: false, error: 'The enabled field must be a boolean.' });
+        return true;
+      }
+      const pinScript = path.join(APP_DIR, 'scripts', 'set-window-always-on-top.ps1');
+      if (!fs.existsSync(pinScript)) {
+        sendJson(res, 500, { ok: false, error: 'The Windows window-control helper is missing.' });
+        return true;
+      }
+      const outcome = await new Promise((resolve) => {
+        const child = spawn('powershell.exe', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', pinScript,
+          '-WindowTitle', 'DJ Control Center - DJ Desktop Studio',
+          '-Enabled', body.enabled ? 'true' : 'false',
+        ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+        let stderr = '';
+        child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+        child.on('error', (error) => resolve({ code: -1, message: error.message }));
+        child.on('close', (code) => resolve({ code: code ?? -1, message: stderr.trim() }));
+      });
+      if (outcome.code !== 0) {
+        sendJson(res, 409, {
+          ok: false,
+          error: outcome.message || 'The control panel window was not found. Close and reopen the control panel, then retry.',
+        });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, data: { enabled: body.enabled } });
+      return true;
+    }
+
     if (requestUrl.pathname === '/api/update/check' && req.method === 'GET') {
       sendJson(res, 200, { ok: true, data: await getLatestReleaseInfo() });
       return true;

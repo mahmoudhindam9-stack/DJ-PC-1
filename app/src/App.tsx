@@ -45,6 +45,8 @@ export const App: React.FC = () => {
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVolume] = useState(0.85);
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('NORMAL');
+  const shuffleBagRef = useRef<string[]>([]);
+  const shuffleHistoryRef = useRef<string[]>([]);
 
   // Radio state
   const [currentRadioStationId, setCurrentRadioStationId] = useState<string | null>(null);
@@ -198,42 +200,79 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [activeTab, isPlaying, currentSong, volume, queue]);
 
+  // Pick the next random track without repeating until the current queue cycle is exhausted.
+  const pickNextShuffleTrack = useCallback((tracks: AudioItem[], currentId?: string): AudioItem | null => {
+    if (tracks.length === 0) return null;
+    const candidates = tracks.filter((track) => track.id !== currentId);
+    if (candidates.length === 0) return tracks[0] || null;
+
+    const candidateIds = new Set(candidates.map((track) => track.id));
+    let bag = shuffleBagRef.current.filter((id) => candidateIds.has(id));
+    if (bag.length === 0) {
+      bag = candidates.map((track) => track.id);
+      for (let index = bag.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [bag[index], bag[randomIndex]] = [bag[randomIndex], bag[index]];
+      }
+    }
+
+    const nextId = bag.shift();
+    shuffleBagRef.current = bag;
+    return candidates.find((track) => track.id === nextId) || candidates[0];
+  }, []);
+
   // Track end logic
   const handleTrackEnded = useCallback(() => {
     if (playbackMode === 'REPEAT_ONE' && currentSong) {
       mainAudioEngine.seekTo(0);
-      mainAudioEngine.play();
+      void mainAudioEngine.play();
       return;
     }
 
     if (queue.length === 0) return;
 
     if (playbackMode === 'SHUFFLE') {
-      const randIdx = Math.floor(Math.random() * queue.length);
-      handlePlaySong(queue[randIdx]);
+      const randomTrack = pickNextShuffleTrack(queue, currentSong?.id);
+      if (randomTrack) handlePlaySong(randomTrack);
       return;
     }
 
-    const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
+    const currentIndex = queue.findIndex((song) => song.id === currentSong?.id);
     if (currentIndex >= 0 && currentIndex < queue.length - 1) {
       handlePlaySong(queue[currentIndex + 1]);
-    } else if (playbackMode === 'REPEAT_ALL' && queue.length > 0) {
+    } else if (playbackMode === 'REPEAT_ALL') {
       handlePlaySong(queue[0]);
     } else {
       setIsPlaying(false);
     }
-  }, [queue, currentSong, playbackMode]);
+  }, [queue, currentSong, playbackMode, pickNextShuffleTrack]);
 
   // Play Song
-  const handlePlaySong = (song: AudioItem, customQueue?: AudioItem[]) => {
+  const handlePlaySong = (song: AudioItem, customQueue?: AudioItem[], recordShuffleHistory = true) => {
     if (customQueue && customQueue.length > 0) {
       setQueue(customQueue);
+      const validIds = new Set(customQueue.map((track) => track.id));
+      shuffleBagRef.current = shuffleBagRef.current.filter((id) => validIds.has(id));
+      shuffleHistoryRef.current = shuffleHistoryRef.current.filter((id) => validIds.has(id));
     }
+
+    if (
+      recordShuffleHistory &&
+      playbackMode === 'SHUFFLE' &&
+      currentSong &&
+      currentSong.id !== song.id &&
+      (!customQueue || customQueue.some((track) => track.id === currentSong.id))
+    ) {
+      const history = shuffleHistoryRef.current;
+      if (history[history.length - 1] !== currentSong.id) history.push(currentSong.id);
+      if (history.length > 300) history.splice(0, history.length - 300);
+    }
+
     setCurrentSong(song);
+    setCurrentTimeMs(0);
+    setDurationMs(song.duration || 0);
     setCurrentRadioStationId(null);
-    mainAudioEngine.loadTrack(song).then(() => {
-      mainAudioEngine.play();
-    });
+    void mainAudioEngine.loadTrack(song).then(() => mainAudioEngine.play());
   };
 
   // Play / Pause Toggle
@@ -256,7 +295,12 @@ export const App: React.FC = () => {
 
   const handleNext = () => {
     if (queue.length === 0) return;
-    const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
+    if (playbackMode === 'SHUFFLE') {
+      const randomTrack = pickNextShuffleTrack(queue, currentSong?.id);
+      if (randomTrack) handlePlaySong(randomTrack);
+      return;
+    }
+    const currentIndex = queue.findIndex((song) => song.id === currentSong?.id);
     const nextIndex = (currentIndex + 1) % queue.length;
     handlePlaySong(queue[nextIndex]);
   };
@@ -267,7 +311,28 @@ export const App: React.FC = () => {
       mainAudioEngine.seekTo(0);
       return;
     }
-    const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
+    if (playbackMode === 'SHUFFLE') {
+      const history = shuffleHistoryRef.current;
+      while (history.length > 0) {
+        const previousId = history.pop();
+        const previousTrack = queue.find((song) => song.id === previousId);
+        if (previousTrack) {
+          if (currentSong && currentSong.id !== previousTrack.id) {
+            shuffleBagRef.current = [
+              currentSong.id,
+              ...shuffleBagRef.current.filter((id) => id !== currentSong.id),
+            ];
+          }
+          handlePlaySong(previousTrack, undefined, false);
+          return;
+        }
+      }
+      // No shuffle history yet: start from a different random item.
+      const randomTrack = pickNextShuffleTrack(queue, currentSong?.id);
+      if (randomTrack) handlePlaySong(randomTrack, undefined, false);
+      return;
+    }
+    const currentIndex = queue.findIndex((song) => song.id === currentSong?.id);
     const prevIndex = (currentIndex - 1 + queue.length) % queue.length;
     handlePlaySong(queue[prevIndex]);
   };
@@ -285,6 +350,10 @@ export const App: React.FC = () => {
   const handleTogglePlaybackMode = () => {
     const modes: PlaybackMode[] = ['NORMAL', 'REPEAT_ONE', 'REPEAT_ALL', 'SHUFFLE'];
     const nextIdx = (modes.indexOf(playbackMode) + 1) % modes.length;
+    if (modes[nextIdx] === 'SHUFFLE') {
+      shuffleBagRef.current = [];
+      shuffleHistoryRef.current = [];
+    }
     setPlaybackMode(modes[nextIdx]);
   };
 
@@ -308,20 +377,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleImportFiles = async (files: FileList | File[]) => {
+  const handleImportFiles = async (files: FileList | File[]): Promise<number> => {
     try {
       const newItems = await batchImportAudioFiles(files);
-      if (newItems.length === 0) return;
+      if (newItems.length === 0) return 0;
 
       await db.addSongs(newItems);
-      const merged = [...newItems, ...library];
-      setLibrary(merged);
-      setQueue([...newItems, ...queue]);
-      if (!currentSong && newItems.length > 0) {
-        handlePlaySong(newItems[0]);
-      }
+      setLibrary((current) => [...newItems, ...current]);
+      setQueue((current) => [...newItems, ...current]);
+      if (!currentSong) handlePlaySong(newItems[0]);
+      return newItems.length;
     } catch (err) {
-      console.warn('Importing audio files notice:', err);
+      console.warn('Importing audio files failed:', err);
+      return -1;
     }
   };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Disc,
   Play,
@@ -17,7 +17,7 @@ import {
 import { AudioItem, ThemeColors, SamplePad } from '../../types';
 import { deckAEngine, deckBEngine, DJEffectType } from '../../audio/DJDeckEngine';
 import { samplerEngine } from '../../audio/SamplerEngine';
-import { AUDIO_INPUT_ACCEPT } from '../../utils/fileImporter';
+import { AUDIO_INPUT_ACCEPT, pickLocalAudioFolder } from '../../utils/fileImporter';
 
 interface DJMixerScreenProps {
   library: AudioItem[];
@@ -58,6 +58,26 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   const [selectedBank, setSelectedBank] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [samplerVolume, setSamplerVolume] = useState(0.9);
   const [trackSelectorDeck, setTrackSelectorDeck] = useState<'A' | 'B' | null>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const handleChooseLocalFolder = async () => {
+    try {
+      const files = await pickLocalAudioFolder();
+      if (files === undefined) {
+        folderInputRef.current?.click();
+      } else if (files && files.length > 0) {
+        onImportFiles(files);
+      }
+    } catch (error) {
+      console.warn('Could not import local music folder:', error);
+    }
+  };
+
+  const handleFolderInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    if (input.files && input.files.length > 0) onImportFiles(input.files);
+    input.value = '';
+  };
 
   // Subscribe to deck updates
   useEffect(() => {
@@ -773,7 +793,9 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
                 />
               </label>
 
-              <label
+              <button
+                type="button"
+                onClick={() => { void handleChooseLocalFolder(); }}
                 className="flex-1 py-2 px-3 rounded-xl text-xs font-semibold cursor-pointer border flex items-center justify-center gap-1.5 hover:bg-white/5 transition-all text-center"
                 style={{
                   backgroundColor: themeColors.surfaceVariant,
@@ -782,20 +804,17 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
               >
                 <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
                 <span>{isArabic ? 'اختيار مجلد' : 'Select Folder'}</span>
-                <input
-                  type="file"
-                  multiple
-                  // @ts-expect-error - webkitdirectory
-                  webkitdirectory=""
-                  directory=""
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      onImportFiles(e.target.files);
-                    }
-                  }}
-                />
-              </label>
+              </button>
+              <input
+                ref={folderInputRef}
+                type="file"
+                multiple
+                // @ts-expect-error - webkitdirectory is standard in Chromium browsers
+                webkitdirectory=""
+                directory=""
+                className="hidden"
+                onChange={handleFolderInputChange}
+              />
             </div>
           </div>
         </div>

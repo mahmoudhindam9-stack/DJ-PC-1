@@ -41,6 +41,7 @@ export class DJDeckEngine {
   public fxAmount = 0.5; // 0 to 1
   public isPlaying = false;
   public volume = 1.0;
+  private crossfadeVolume = 1.0;
 
   // Callbacks
   private onUpdateCallbacks: Array<() => void> = [];
@@ -106,10 +107,10 @@ export class DJDeckEngine {
       this.compressorNode = ctx.createDynamicsCompressor();
 
       this.deckGain = ctx.createGain();
-      this.deckGain.gain.value = 1.0;
+      this.deckGain.gain.value = this.volume;
 
       this.crossfadeGain = ctx.createGain();
-      this.crossfadeGain.gain.value = 1.0;
+      this.crossfadeGain.gain.value = this.crossfadeVolume;
 
       this.analyser = ctx.createAnalyser();
       this.analyser.fftSize = 64;
@@ -188,9 +189,11 @@ export class DJDeckEngine {
   }
 
   setCrossfadeVolume(gain: number) {
-    const clamped = Math.max(0, Math.min(1, gain));
+    // Store the target even if this deck has not been loaded yet. The mixer
+    // sets its crossfader on mount, before either deck may have an AudioContext.
+    this.crossfadeVolume = Math.max(0, Math.min(1, gain));
     if (this.crossfadeGain && this.ctx) {
-      this.crossfadeGain.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this.crossfadeGain.gain.setTargetAtTime(this.crossfadeVolume, this.ctx.currentTime, 0.02);
     }
   }
 
