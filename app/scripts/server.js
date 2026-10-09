@@ -83,9 +83,16 @@ function isAllowedAlbumatyUrl(raw) {
 
 function isAllowedAudioUrl(raw) {
   const parsed = parseUrl(raw);
-  if (!parsed || !/^https?:$/.test(parsed.protocol)) return false;
-  const host = parsed.hostname.toLowerCase();
-  return host === 'albumaty.com' || host === 'www.albumaty.com' || host.endsWith('.albumaty.com');
+  if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password) return false;
+  // Albumaty MP3 files may be hosted on a separate public CDN.
+  // Reject local names, IP literals, and unusual ports to avoid a general-purpose proxy.
+  const host = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+  if (!host || host === 'localhost' || host.endsWith('.localhost') ||
+      host.endsWith('.local') || host.endsWith('.internal') ||
+      host.endsWith('.lan') || host.endsWith('.home.arpa')) return false;
+  if (!host.includes('.') || /^\\d+(?:\\.\\d+){3}$/.test(host) || host.includes(':')) return false;
+  if (parsed.port && parsed.port !== '443') return false;
+  return true;
 }
 
 function isAllowedAudiusUrl(raw) {
@@ -429,6 +436,12 @@ async function proxyAudioStream(req, res, url, downloadName) {
   res.on('close', () => {
     if (!res.writableEnded) controller.abort();
   });
+
+  // Validate the final URL too, because fetch follows redirects by default.
+  if (!isAllowedAudioUrl(upstream.url)) {
+    await upstream.body?.cancel().catch(() => {});
+    throw new Error('Audio host redirected to an unsupported destination.');
+  }
 
   if ((!upstream.ok && upstream.status !== 206) || !upstream.body) {
     throw new Error('Audio stream failed (HTTP ' + upstream.status + ')');
