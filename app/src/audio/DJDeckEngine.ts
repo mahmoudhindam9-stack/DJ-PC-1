@@ -284,6 +284,67 @@ export class DJDeckEngine {
     this.notify();
   }
 
+  /**
+   * Match this deck to a playing reference deck, then nudge this track's
+   * timeline to the closest beat-grid phase. Beat phase is estimated from
+   * the track's measured BPM and its current playback rate.
+   */
+  syncTo(reference: DJDeckEngine): {
+    success: boolean;
+    reason: 'synced' | 'pitch-limit' | 'unavailable' | 'not-playing';
+  } {
+    if (!this.isPlaying || !reference.isPlaying) {
+      return { success: false, reason: 'not-playing' };
+    }
+
+    const ownBpm = this.currentBpm;
+    const referenceBpm = reference.currentBpm;
+    if (
+      ownBpm === null ||
+      referenceBpm === null ||
+      this.bpmConfidence < 0.12 ||
+      reference.bpmConfidence < 0.12
+    ) {
+      return { success: false, reason: 'unavailable' };
+    }
+
+    const previousPitch = this.pitch;
+    const desiredPitch = previousPitch * (referenceBpm / ownBpm);
+    const nextPitch = clamp(desiredPitch, 0.5, 1.5);
+    const matchedBpm = ownBpm * (nextPitch / previousPitch);
+    const pitchLimited = Math.abs(matchedBpm - referenceBpm) / referenceBpm > 0.015;
+
+    // Convert detected output BPM back to track-timeline BPM. Playback rate
+    // changes what the analyser hears, but not the time values in the media file.
+    const ownPlaybackRate = Math.max(0.25, this.audioElement.playbackRate || 1);
+    const referencePlaybackRate = Math.max(0.25, reference.audioElement.playbackRate || 1);
+    const ownTrackBpm = ownBpm / ownPlaybackRate;
+    const referenceTrackBpm = referenceBpm / referencePlaybackRate;
+
+    if (
+      !Number.isFinite(ownTrackBpm) ||
+      !Number.isFinite(referenceTrackBpm) ||
+      ownTrackBpm <= 0 ||
+      referenceTrackBpm <= 0
+    ) {
+      return { success: false, reason: 'unavailable' };
+    }
+
+    const ownPhase = ((this.currentTimeMs * ownTrackBpm / 60000) % 1 + 1) % 1;
+    const referencePhase = ((reference.currentTimeMs * referenceTrackBpm / 60000) % 1 + 1) % 1;
+    let phaseShiftBeats = referencePhase - ownPhase;
+    phaseShiftBeats = ((phaseShiftBeats + 0.5) % 1 + 1) % 1 - 0.5;
+
+    const seekAdjustmentMs = phaseShiftBeats * 60000 / ownTrackBpm;
+    const lastSafeMs = this.durationMs > 0 ? Math.max(0, this.durationMs - 50) : Number.MAX_SAFE_INTEGER;
+    const alignedTimeMs = clamp(this.currentTimeMs + seekAdjustmentMs, 0, lastSafeMs);
+
+    this.setPitch(nextPitch);
+    this.seekTo(alignedTimeMs);
+
+    return { success: true, reason: pitchLimited ? 'pitch-limit' : 'synced' };
+  }
+
   setCrossfadeVolume(gain: number) {
     this.crossfadeVolume = clamp(gain, 0, 1);
     if (this.crossfadeGain && this.ctx) {

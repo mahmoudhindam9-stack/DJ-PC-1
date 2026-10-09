@@ -243,6 +243,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   const [selectedBank, setSelectedBank] = useState<MixerBank>(savedSettings.selectedBank);
   const [samplerVolume, setSamplerVolume] = useState(savedSettings.samplerVolume);
   const [trackSelectorDeck, setTrackSelectorDeck] = useState<'A' | 'B' | null>(null);
+  const [beatSyncMessage, setBeatSyncMessage] = useState<string | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleChooseLocalFolder = async () => {
@@ -441,6 +442,44 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   ];
 
   const isAnyDeckPlaying = deckAState.isPlaying || deckBState.isPlaying;
+  const canBeatSync =
+    Boolean(deckAState.track && deckBState.track) &&
+    deckAState.isPlaying &&
+    deckBState.isPlaying &&
+    deckAState.currentBpm !== null &&
+    deckBState.currentBpm !== null &&
+    deckAState.bpmConfidence >= 0.12 &&
+    deckBState.bpmConfidence >= 0.12;
+
+  const handleBeatSync = (targetDeck: 'A' | 'B') => {
+    const target = targetDeck === 'A' ? deckAEngine : deckBEngine;
+    const reference = targetDeck === 'A' ? deckBEngine : deckAEngine;
+    const result = target.syncTo(reference);
+
+    if (!result.success) {
+      setBeatSyncMessage(
+        result.reason === 'not-playing'
+          ? (isArabic ? 'شغّل الديكين أولاً.' : 'Start both decks before syncing.')
+          : (isArabic ? 'انتظر حتى ينتهي تحليل BPM في الديكين.' : 'Wait for BPM detection on both decks.'),
+      );
+      return;
+    }
+
+    setBeatSyncMessage(
+      result.reason === 'pitch-limit'
+        ? (isArabic ? 'تمت محاذاة النبضات، لكن حد الـPitch منع تطابق السرعة بالكامل.' : 'Beat phase aligned, but the pitch limit prevents an exact tempo match.')
+        : (isArabic ? 'تمت مزامنة السرعة ومحاذاة النبضات.' : 'Tempo matched and beat phase aligned.'),
+    );
+  };
+
+  const beatSyncHint = beatSyncMessage || (
+    !deckAState.track || !deckBState.track
+      ? (isArabic ? 'حمّل أغنيتين في الديكين أولاً.' : 'Load a track on both decks first.')
+      : !deckAState.isPlaying || !deckBState.isPlaying
+        ? (isArabic ? 'شغّل الديكين لبدء تحليل الإيقاع.' : 'Play both decks to analyse their beats.')
+        : !canBeatSync
+          ? (isArabic ? 'جارٍ تحليل BPM؛ انتظر ظهور الرقم في الديكين.' : 'Analysing BPM; wait for a reading on both decks.')
+          : (isArabic ? 'اختر الديك المرجعي لمزامنة السرعة والنبضات.' : 'Choose the master deck to sync tempo and beats.'));
 
   return (
     <div
@@ -531,6 +570,80 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
           <span>CENTER (50/50)</span>
           <span>{Math.round(crossfader * 100)}%</span>
         </div>
+      </div>
+
+      {/* Beat Sync */}
+      <div
+        className="p-4 rounded-2xl border shadow-lg flex flex-col gap-3"
+        style={{
+          backgroundColor: themeColors.surface,
+          borderColor: themeColors.border,
+        }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-xs font-black tracking-[0.16em]">
+              {isArabic ? 'مزامنة الإيقاع' : 'BEAT SYNC'}
+            </h2>
+            <p className="mt-1 text-[10px] opacity-65">
+              {isArabic ? 'تطابق تلقائي للسرعة ومحاذاة أقرب نبضة بين الديكين' : 'Match tempo and align the nearest beat between decks'}
+            </p>
+          </div>
+          <span
+            className="rounded-md border px-2 py-1 text-[10px] font-black"
+            style={{
+              color: canBeatSync ? '#00e676' : themeColors.textMuted,
+              borderColor: canBeatSync ? '#00e67680' : themeColors.border,
+              backgroundColor: canBeatSync ? '#00e67612' : themeColors.surfaceVariant,
+            }}
+          >
+            {canBeatSync ? (isArabic ? 'جاهز للمزامنة' : 'SYNC READY') : (isArabic ? 'بانتظار BPM' : 'WAITING FOR BPM')}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => handleBeatSync('B')}
+            disabled={!canBeatSync}
+            className="rounded-xl border px-3 py-3 text-xs font-black transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              borderColor: themeColors.accentA + '90',
+              backgroundColor: themeColors.accentA + '18',
+              color: themeColors.accentA,
+            }}
+            title={isArabic ? 'اجعل Deck A هو المرجع وزامن Deck B معه' : 'Use Deck A as master and sync Deck B to it'}
+          >
+            {isArabic ? 'A ← مزامنة B' : 'SYNC A → B'}
+            <span className="mt-1 block text-[10px] font-semibold opacity-75">
+              {deckAState.currentBpm ? deckAState.currentBpm + ' BPM' : '— BPM'}
+              {'  →  '}
+              {deckBState.currentBpm ? deckBState.currentBpm + ' BPM' : '— BPM'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleBeatSync('A')}
+            disabled={!canBeatSync}
+            className="rounded-xl border px-3 py-3 text-xs font-black transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              borderColor: themeColors.accentB + '90',
+              backgroundColor: themeColors.accentB + '18',
+              color: themeColors.accentB,
+            }}
+            title={isArabic ? 'اجعل Deck B هو المرجع وزامن Deck A معه' : 'Use Deck B as master and sync Deck A to it'}
+          >
+            {isArabic ? 'B ← مزامنة A' : 'SYNC B → A'}
+            <span className="mt-1 block text-[10px] font-semibold opacity-75">
+              {deckBState.currentBpm ? deckBState.currentBpm + ' BPM' : '— BPM'}
+              {'  →  '}
+              {deckAState.currentBpm ? deckAState.currentBpm + ' BPM' : '— BPM'}
+            </span>
+          </button>
+        </div>
+        <p role="status" aria-live="polite" className="text-[10px] leading-relaxed opacity-75">
+          {beatSyncHint}
+        </p>
       </div>
 
       {/* DECK A & DECK B SIDE-BY-SIDE */}
