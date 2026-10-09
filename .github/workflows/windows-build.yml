@@ -117,7 +117,7 @@ jobs:
           name: DJ Desktop Studio v${{ steps.version.outputs.version }}
           body: |
             Automated Windows PC release.
-            Includes the complete app and setup/uninstall files, automatic song crossfade (0–15 seconds), DJ Beat Sync, BPM detection, AI Studio, and the Windows self-updater.
+            Includes the complete app and setup/uninstall files, vinyl platter controls with tactile DJ scratching on both decks, automatic song crossfade (0–15 seconds), beat-synced Auto Loop, DJ Auto Fill, DJ Beat Sync, BPM detection, AI Studio, and the Windows self-updater.
           files: |
             DJ-Desktop-PC-v${{ steps.version.outputs.version }}.zip
             DJ-Desktop-PC-Latest.zip

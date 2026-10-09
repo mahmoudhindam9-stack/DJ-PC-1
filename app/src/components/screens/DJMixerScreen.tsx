@@ -18,6 +18,7 @@ import { AudioItem, ThemeColors, SamplePad } from '../../types';
 import { deckAEngine, deckBEngine, DJEffectType } from '../../audio/DJDeckEngine';
 import { samplerEngine } from '../../audio/SamplerEngine';
 import { AUDIO_INPUT_ACCEPT, pickLocalAudioFolder } from '../../utils/fileImporter';
+import './DJMixerScreen.css';
 
 
 type MixerBank = 'A' | 'B' | 'C' | 'D';
@@ -191,6 +192,176 @@ const RotaryVolumeKnob: React.FC<RotaryVolumeKnobProps> = ({
       <span className="text-[11px] font-mono font-bold tabular-nums" style={{ color: textColor }}>
         {Math.round(normalized * 100)}%
       </span>
+    </div>
+  );
+};
+
+
+interface VinylScratchPlatterProps {
+  engine: typeof deckAEngine;
+  hasTrack: boolean;
+  isPlaying: boolean;
+  pitch: number;
+  accent: string;
+  isArabic: boolean;
+  deckLabel: 'A' | 'B';
+}
+
+const VinylScratchPlatter: React.FC<VinylScratchPlatterProps> = ({
+  engine, hasTrack, isPlaying, pitch, accent, isArabic, deckLabel,
+}) => {
+  const discRef = useRef<HTMLDivElement>(null);
+  const rotationRef = useRef(0);
+  const dragRef = useRef<{
+    pointerId: number;
+    lastPointerAngle: number;
+    startTimeMs: number;
+    totalAngle: number;
+    lastTimestamp: number;
+  } | null>(null);
+  const [isScratching, setIsScratching] = useState(false);
+
+  useEffect(() => {
+    if (!isPlaying || isScratching || !hasTrack) return;
+    let frameId = 0;
+    let previousTimestamp = 0;
+    const animateVinyl = (timestamp: number) => {
+      if (previousTimestamp > 0) {
+        const elapsed = Math.min(50, timestamp - previousTimestamp);
+        rotationRef.current = (rotationRef.current + elapsed * 0.2 * Math.max(0.5, pitch)) % 360;
+      }
+      previousTimestamp = timestamp;
+      if (discRef.current) discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
+      frameId = window.requestAnimationFrame(animateVinyl);
+    };
+    frameId = window.requestAnimationFrame(animateVinyl);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [hasTrack, isPlaying, isScratching, pitch]);
+
+  const getPointerAngle = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return Math.atan2(
+      event.clientY - (rect.top + rect.height / 2),
+      event.clientX - (rect.left + rect.width / 2),
+    ) * 180 / Math.PI;
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!hasTrack) return;
+    event.preventDefault();
+    const timestamp = event.timeStamp || performance.now();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      lastPointerAngle: getPointerAngle(event),
+      startTimeMs: engine.startScratch(),
+      totalAngle: 0,
+      lastTimestamp: timestamp,
+    };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* pointer capture may be unavailable */ }
+    setIsScratching(true);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const pointerAngle = getPointerAngle(event);
+    let deltaAngle = pointerAngle - drag.lastPointerAngle;
+    if (deltaAngle > 180) deltaAngle -= 360;
+    if (deltaAngle < -180) deltaAngle += 360;
+
+    const timestamp = event.timeStamp || performance.now();
+    const elapsed = Math.max(1, timestamp - drag.lastTimestamp);
+    drag.totalAngle += deltaAngle;
+    drag.lastPointerAngle = pointerAngle;
+    drag.lastTimestamp = timestamp;
+    rotationRef.current = (rotationRef.current + deltaAngle + 360) % 360;
+
+    if (discRef.current) discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
+    // One full vinyl turn moves about 1.8 seconds through the record. This makes
+    // clockwise/counter-clockwise hand movement scrub the song in both directions.
+    engine.scratchTo(drag.startTimeMs + drag.totalAngle * 5, deltaAngle * 5000 / elapsed);
+  };
+
+  const finishScratch = (pointerId?: number) => {
+    if (!dragRef.current || (pointerId !== undefined && dragRef.current.pointerId !== pointerId)) return;
+    dragRef.current = null;
+    engine.endScratch();
+    setIsScratching(false);
+  };
+
+  return (
+    <div className="dj-platter-stage">
+      <div className="dj-turntable-base" style={{ borderColor: accent + '55' }}>
+        <div className="dj-turntable-light" style={{ background: `radial-gradient(circle, ${accent}2b 0%, transparent 70%)` }} />
+        <div className="dj-vinyl-shadow" />
+        <div
+          ref={discRef}
+          role="application"
+          tabIndex={hasTrack ? 0 : -1}
+          aria-label={isArabic
+            ? `أسطوانة الديك ${deckLabel}، اضغط واسحب لعمل سكراتش`
+            : `Deck ${deckLabel} vinyl, press and drag to scratch`}
+          aria-disabled={!hasTrack}
+          className={`dj-vinyl-disc ${isScratching ? 'is-scratching' : ''} ${!hasTrack ? 'is-empty' : ''}`}
+          style={{ outlineColor: accent }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={(event) => finishScratch(event.pointerId)}
+          onPointerCancel={(event) => finishScratch(event.pointerId)}
+          onLostPointerCapture={(event) => finishScratch(event.pointerId)}
+          onKeyDown={(event) => {
+            if (!hasTrack || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+            event.preventDefault();
+            if (!dragRef.current) {
+              const startTimeMs = engine.startScratch();
+              dragRef.current = {
+                pointerId: -1,
+                lastPointerAngle: 0,
+                startTimeMs,
+                totalAngle: 0,
+                lastTimestamp: event.timeStamp || performance.now(),
+              };
+              setIsScratching(true);
+            }
+            const drag = dragRef.current;
+            if (!drag) return;
+            const delta = event.key === 'ArrowRight' ? 18 : -18;
+            drag.totalAngle += delta;
+            rotationRef.current = (rotationRef.current + delta + 360) % 360;
+            if (discRef.current) discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
+            engine.scratchTo(drag.startTimeMs + drag.totalAngle * 5, delta * 18);
+          }}
+          onKeyUp={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') finishScratch(-1);
+          }}
+          onBlur={() => finishScratch(-1)}
+        >
+          <div className="dj-vinyl-highlight" />
+          <div className="dj-vinyl-label" style={{
+            borderColor: accent,
+            background: `radial-gradient(circle at 32% 28%, ${accent}dd, #17191f 78%)`,
+            boxShadow: `0 0 18px ${accent}45, inset 0 0 0 4px rgba(0,0,0,.35)`,
+          }}>
+            <span className="dj-vinyl-label-top">DJ STUDIO</span>
+            <span className="dj-vinyl-label-deck" style={{ color: '#fff' }}>{deckLabel}</span>
+            <span className="dj-vinyl-label-bottom">{hasTrack ? '33⅓ RPM' : 'NO TRACK'}</span>
+          </div>
+          <div className="dj-vinyl-spindle" />
+        </div>
+        <div className="dj-tonearm" aria-hidden="true">
+          <span className="dj-tonearm-pivot" />
+          <span className="dj-tonearm-shaft" />
+          <span className="dj-tonearm-head" />
+          <span className="dj-tonearm-needle" />
+        </div>
+        <div className="dj-turntable-led" style={{ backgroundColor: isScratching ? '#ffb74d' : (isPlaying ? '#00e676' : '#555b66') }} />
+      </div>
+      <p className={`dj-scratch-hint ${isScratching ? 'is-active' : ''}`} style={{ color: isScratching ? accent : undefined }}>
+        {isScratching
+          ? (isArabic ? 'SCRATCH شغال — حرّك الأسطوانة ذهابًا وإيابًا' : 'SCRATCH ACTIVE — move the vinyl back and forth')
+          : (isArabic ? 'اضغط على الأسطوانة واسحبها لعمل صوت DJ Scratch' : 'PRESS & DRAG THE VINYL TO SCRATCH')}
+      </p>
     </div>
   );
 };
@@ -751,6 +922,8 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
             </div>
           </div>
 
+          <VinylScratchPlatter engine={deckAEngine} hasTrack={Boolean(deckAState.track)} isPlaying={deckAState.isPlaying} pitch={deckAState.pitch} accent={themeColors.accentA} isArabic={isArabic} deckLabel="A" />
+
           {/* Track Display Area */}
           <div
             onClick={() => setTrackSelectorDeck('A')}
@@ -968,6 +1141,8 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
               </span>
             </div>
           </div>
+
+          <VinylScratchPlatter engine={deckBEngine} hasTrack={Boolean(deckBState.track)} isPlaying={deckBState.isPlaying} pitch={deckBState.pitch} accent={themeColors.accentB} isArabic={isArabic} deckLabel="B" />
 
           {/* Track Display Area */}
           <div

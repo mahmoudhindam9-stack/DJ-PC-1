@@ -50,6 +50,14 @@ export class DJDeckEngine {
   private analyser: AnalyserNode | null = null;
   private bpmAnalyser: AnalyserNode | null = null;
   private bpmSilentGain: GainNode | null = null;
+  private scratchFilter: BiquadFilterNode | null = null;
+  private scratchGain: GainNode | null = null;
+  private scratchNoiseBuffer: AudioBuffer | null = null;
+  private scratchNoiseSource: AudioBufferSourceNode | null = null;
+  private scratchOscillator: OscillatorNode | null = null;
+  private scratchOscillatorGain: GainNode | null = null;
+  private scratchActive = false;
+  private scratchWasPlaying = false;
   private bpmFrameId: number | null = null;
   private bpmLastSampleAt = 0;
   private bpmLastEvaluationAt = 0;
@@ -103,6 +111,7 @@ export class DJDeckEngine {
       this.notify();
     });
     this.audioElement.addEventListener('ended', () => {
+      if (this.scratchActive) this.endScratch();
       this.isPlaying = false;
       this.stopBpmDetection();
       this.notify();
@@ -155,6 +164,32 @@ export class DJDeckEngine {
 
     this.crossfadeGain = ctx.createGain();
     this.crossfadeGain.gain.value = this.crossfadeVolume;
+
+    // Dedicated vinyl friction path: filtered noise and a subdued resonant tone
+    // are mixed through the deck crossfader so scratching follows the mixer.
+    this.scratchFilter = ctx.createBiquadFilter();
+    this.scratchFilter.type = 'bandpass';
+    this.scratchFilter.frequency.value = 1300;
+    this.scratchFilter.Q.value = 1.35;
+    this.scratchGain = ctx.createGain();
+    this.scratchGain.gain.value = 0;
+    this.scratchNoiseBuffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate)), ctx.sampleRate);
+    const scratchNoise = this.scratchNoiseBuffer.getChannelData(0);
+    let filteredNoise = 0;
+    for (let index = 0; index < scratchNoise.length; index += 1) {
+      filteredNoise = filteredNoise * 0.32 + (Math.random() * 2 - 1) * 0.68;
+      scratchNoise[index] = filteredNoise * 0.65;
+    }
+    this.scratchOscillator = ctx.createOscillator();
+    this.scratchOscillator.type = 'triangle';
+    this.scratchOscillator.frequency.value = 110;
+    this.scratchOscillatorGain = ctx.createGain();
+    this.scratchOscillatorGain.gain.value = 0;
+    this.scratchFilter.connect(this.scratchGain);
+    this.scratchGain.connect(this.crossfadeGain);
+    this.scratchOscillator.connect(this.scratchOscillatorGain);
+    this.scratchOscillatorGain.connect(this.crossfadeGain);
+    this.scratchOscillator.start();
 
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 256;
@@ -258,7 +293,88 @@ export class DJDeckEngine {
   }
 
   pause() {
+    if (this.scratchActive) this.scratchWasPlaying = false;
     this.audioElement.pause();
+  }
+
+  /**
+   * Begin a tactile vinyl drag. The track stays audible at a reduced level while
+   * the platter scrubs the timeline; filtered vinyl friction supplies the
+   * characteristic scratch texture rather than only changing the UI animation.
+   */
+  startScratch(): number {
+    if (!this.currentTrack) return this.currentTimeMs;
+    if (this.scratchActive) return this.currentTimeMs;
+
+    const context = this.ensureContext();
+    this.scratchWasPlaying = this.isPlaying;
+    this.scratchActive = true;
+
+    if (this.deckGain) {
+      this.deckGain.gain.setTargetAtTime(this.volume * 0.32, context.currentTime, 0.008);
+    }
+
+    if (this.scratchNoiseBuffer && this.scratchFilter && !this.scratchNoiseSource) {
+      const noiseSource = context.createBufferSource();
+      noiseSource.buffer = this.scratchNoiseBuffer;
+      noiseSource.loop = true;
+      noiseSource.connect(this.scratchFilter);
+      noiseSource.start();
+      this.scratchNoiseSource = noiseSource;
+    }
+
+    this.scratchGain?.gain.setTargetAtTime(this.volume * 0.025, context.currentTime, 0.008);
+    this.scratchOscillatorGain?.gain.setTargetAtTime(this.volume * 0.02, context.currentTime, 0.008);
+
+    if (!this.isPlaying) void this.play();
+    this.notify();
+    return this.currentTimeMs;
+  }
+
+  /** Move the playback head with the record and shape the scratch sound from hand speed. */
+  scratchTo(positionMs: number, velocityMsPerSecond: number): void {
+    if (!this.scratchActive) return;
+    const maxPositionMs = this.durationMs > 0 ? Math.max(0, this.durationMs - 35) : Number.MAX_SAFE_INTEGER;
+    const targetMs = clamp(positionMs, 0, maxPositionMs);
+    try {
+      this.audioElement.currentTime = targetMs / 1000;
+    } catch {
+      // A newly imported track may not be seekable until its metadata arrives.
+    }
+
+    const context = this.ctx;
+    const speed = Math.abs(Number.isFinite(velocityMsPerSecond) ? velocityMsPerSecond : 0);
+    if (context) {
+      const intensity = clamp(speed / 1650, 0, 1);
+      this.scratchFilter?.frequency.setTargetAtTime(clamp(700 + speed * 0.58, 700, 4200), context.currentTime, 0.008);
+      this.scratchGain?.gain.setTargetAtTime(this.volume * (0.025 + intensity * 0.22), context.currentTime, 0.006);
+      this.scratchOscillator?.frequency.setTargetAtTime(clamp(82 + speed * 0.035, 82, 260), context.currentTime, 0.008);
+      this.scratchOscillatorGain?.gain.setTargetAtTime(this.volume * (0.018 + intensity * 0.055), context.currentTime, 0.008);
+    }
+
+    // Negative media playback rates are not portable across browsers. Reverse
+    // hand motion is therefore represented by reverse timeline seeks, while
+    // the positive rate follows the speed of the hand.
+    this.audioElement.playbackRate = clamp(Math.max(0.25, speed / 1000), 0.25, 2.5);
+  }
+
+  endScratch(): void {
+    if (!this.scratchActive) return;
+    const context = this.ctx;
+    const shouldResume = this.scratchWasPlaying;
+    this.scratchActive = false;
+
+    if (context) {
+      this.scratchGain?.gain.setTargetAtTime(0, context.currentTime, 0.018);
+      this.scratchOscillatorGain?.gain.setTargetAtTime(0, context.currentTime, 0.018);
+      this.deckGain?.gain.setTargetAtTime(this.volume, context.currentTime, 0.025);
+      this.scratchNoiseSource?.stop();
+      this.scratchNoiseSource?.disconnect();
+      this.scratchNoiseSource = null;
+    }
+    this.applyPitchAndEffect();
+    this.notify();
+    if (!shouldResume) this.pause();
   }
 
   togglePlay() {
@@ -304,7 +420,7 @@ export class DJDeckEngine {
   }
 
   private handleActiveLoopFrame(): boolean {
-    if (!this.isPlaying || this.loopBeats <= 0 || this.loopEndMs <= this.loopStartMs) return false;
+    if (this.scratchActive || !this.isPlaying || this.loopBeats <= 0 || this.loopEndMs <= this.loopStartMs) return false;
     const currentMs = this.currentTimeMs;
     if (currentMs >= this.loopEndMs || currentMs < this.loopStartMs) {
       const lengthMs = this.loopEndMs - this.loopStartMs;
@@ -416,7 +532,7 @@ export class DJDeckEngine {
   setDeckVolume(volume: number) {
     this.volume = clamp(volume, 0, 1);
     if (this.deckGain && this.ctx) {
-      this.deckGain.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.015);
+      this.deckGain.gain.setTargetAtTime(this.scratchActive ? this.volume * 0.32 : this.volume, this.ctx.currentTime, 0.015);
     }
     this.notify();
   }
@@ -437,7 +553,7 @@ export class DJDeckEngine {
     const amount = clamp(this.fxAmount, 0, 1);
     const voiceRate = VOICE_RATE[this.activeEffect];
     const effectiveRate = this.pitch * (voiceRate ? 1 + (voiceRate - 1) * amount : 1);
-    this.audioElement.playbackRate = clamp(effectiveRate, 0.25, 2.5);
+    if (!this.scratchActive) this.audioElement.playbackRate = clamp(effectiveRate, 0.25, 2.5);
 
     const ctx = this.ctx;
     if (!ctx) return;
