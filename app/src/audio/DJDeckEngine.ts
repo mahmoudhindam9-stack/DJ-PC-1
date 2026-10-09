@@ -48,7 +48,19 @@ export class DJDeckEngine {
   private waveshaperNode: WaveShaperNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyser: AnalyserNode | null = null;
+  private bpmAnalyser: AnalyserNode | null = null;
+  private bpmSilentGain: GainNode | null = null;
+  private bpmFrameId: number | null = null;
+  private bpmLastSampleAt = 0;
+  private bpmLastEvaluationAt = 0;
+  private bpmSampleIntervalMs = 50;
+  private bpmPreviousSpectrum = new Uint8Array(0);
+  private bpmSamples: number[] = [];
+  private bpmCandidate: number | null = null;
+  private bpmCandidateHits = 0;
 
+  public currentBpm: number | null = null;
+  public bpmConfidence = 0;
   public currentTrack: AudioItem | null = null;
   public pitch = 1.0;
   public cuePositionMs = 0;
@@ -78,14 +90,17 @@ export class DJDeckEngine {
 
     this.audioElement.addEventListener('play', () => {
       this.isPlaying = true;
+      this.startBpmDetection();
       this.notify();
     });
     this.audioElement.addEventListener('pause', () => {
       this.isPlaying = false;
+      this.stopBpmDetection();
       this.notify();
     });
     this.audioElement.addEventListener('ended', () => {
       this.isPlaying = false;
+      this.stopBpmDetection();
       this.notify();
     });
     this.audioElement.addEventListener('timeupdate', () => this.notify());
@@ -136,6 +151,20 @@ export class DJDeckEngine {
 
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 256;
+
+    // Use a dedicated high-resolution analyser for beat tracking. Its output is
+    // muted, so it observes the same source without adding a second audible path.
+    this.bpmAnalyser = ctx.createAnalyser();
+    this.bpmAnalyser.fftSize = 2048;
+    this.bpmAnalyser.smoothingTimeConstant = 0;
+    this.bpmAnalyser.minDecibels = -90;
+    this.bpmAnalyser.maxDecibels = -20;
+    this.bpmPreviousSpectrum = new Uint8Array(this.bpmAnalyser.frequencyBinCount);
+    this.bpmSilentGain = ctx.createGain();
+    this.bpmSilentGain.gain.value = 0;
+    this.sourceNode.connect(this.bpmAnalyser);
+    this.bpmAnalyser.connect(this.bpmSilentGain);
+    this.bpmSilentGain.connect(ctx.destination);
 
     this.delayNode = ctx.createDelay(2);
     this.delayNode.delayTime.value = 0.25;
@@ -193,6 +222,7 @@ export class DJDeckEngine {
 
   loadTrack(track: AudioItem) {
     this.ensureContext();
+    this.resetBpmDetection();
     this.currentTrack = track;
     this.audioElement.src = track.uri;
     this.audioElement.load();
@@ -397,6 +427,179 @@ export class DJDeckEngine {
         : ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
     }
     return curve;
+  }
+
+
+  private resetBpmDetection(): void {
+    this.stopBpmDetection();
+    this.currentBpm = null;
+    this.bpmConfidence = 0;
+    this.bpmSamples = [];
+    this.bpmCandidate = null;
+    this.bpmCandidateHits = 0;
+    this.bpmLastSampleAt = 0;
+    this.bpmLastEvaluationAt = 0;
+    this.bpmSampleIntervalMs = 50;
+    if (this.bpmPreviousSpectrum.length !== (this.bpmAnalyser?.frequencyBinCount || 0)) {
+      this.bpmPreviousSpectrum = new Uint8Array(this.bpmAnalyser?.frequencyBinCount || 0);
+    } else {
+      this.bpmPreviousSpectrum.fill(0);
+    }
+  }
+
+  private startBpmDetection(): void {
+    if (!this.bpmAnalyser || this.bpmFrameId !== null || !this.currentTrack) return;
+    this.bpmLastSampleAt = 0;
+    this.bpmFrameId = window.requestAnimationFrame(this.sampleBpmFrame);
+  }
+
+  private stopBpmDetection(): void {
+    if (this.bpmFrameId !== null) {
+      window.cancelAnimationFrame(this.bpmFrameId);
+      this.bpmFrameId = null;
+    }
+    this.bpmLastSampleAt = 0;
+  }
+
+  /**
+   * Real-time beat tracking using positive spectral flux and an onset-envelope
+   * autocorrelation. It needs no song metadata and updates once per second after
+   * enough live audio has been observed.
+   */
+  private sampleBpmFrame = (timestamp: number): void => {
+    this.bpmFrameId = null;
+    if (!this.isPlaying || !this.bpmAnalyser || !this.ctx) return;
+
+    if (this.bpmLastSampleAt === 0) {
+      this.bpmLastSampleAt = timestamp;
+      this.bpmFrameId = window.requestAnimationFrame(this.sampleBpmFrame);
+      return;
+    }
+
+    const elapsedMs = timestamp - this.bpmLastSampleAt;
+    if (elapsedMs < 45) {
+      this.bpmFrameId = window.requestAnimationFrame(this.sampleBpmFrame);
+      return;
+    }
+
+    this.bpmLastSampleAt = timestamp;
+    this.bpmSampleIntervalMs = this.bpmSamples.length === 0
+      ? elapsedMs
+      : this.bpmSampleIntervalMs * 0.8 + elapsedMs * 0.2;
+
+    const spectrum = new Uint8Array(this.bpmAnalyser.frequencyBinCount);
+    this.bpmAnalyser.getByteFrequencyData(spectrum);
+
+    // Positive spectral flux emphasizes new percussive energy instead of the
+    // sustained tonal energy that otherwise dominates a music spectrum.
+    const firstBin = 3;
+    const lastBin = Math.min(
+      spectrum.length - 1,
+      Math.floor(2400 * this.bpmAnalyser.fftSize / (this.ctx.sampleRate || 44100)),
+    );
+    let flux = 0;
+    let activeBins = 0;
+    for (let bin = firstBin; bin <= lastBin; bin += 1) {
+      const increase = spectrum[bin] - (this.bpmPreviousSpectrum[bin] || 0);
+      if (increase > 0) flux += increase;
+      activeBins += 1;
+    }
+    this.bpmPreviousSpectrum = spectrum;
+    this.bpmSamples.push(activeBins > 0 ? flux / activeBins : 0);
+
+    // Keep around 16 seconds for a stable tempo estimate without unbounded memory.
+    if (this.bpmSamples.length > 320) this.bpmSamples.shift();
+
+    if (
+      this.bpmSamples.length >= 100 &&
+      (this.bpmLastEvaluationAt === 0 || timestamp - this.bpmLastEvaluationAt >= 1000)
+    ) {
+      this.bpmLastEvaluationAt = timestamp;
+      this.estimateBpmFromOnsets();
+    }
+
+    this.bpmFrameId = window.requestAnimationFrame(this.sampleBpmFrame);
+  };
+
+  private estimateBpmFromOnsets(): void {
+    const samples = this.bpmSamples;
+    if (samples.length < 100) return;
+
+    const mean = samples.reduce((total, value) => total + value, 0) / samples.length;
+    let variance = 0;
+    for (const value of samples) variance += (value - mean) ** 2;
+    variance /= samples.length;
+
+    // Silence or near-constant ambience has no reliable beat envelope.
+    if (variance < 0.08) {
+      this.bpmConfidence = 0;
+      this.notify();
+      return;
+    }
+
+    const intervalMs = Math.max(40, Math.min(90, this.bpmSampleIntervalMs));
+    const minLag = Math.max(2, Math.floor(60000 / (200 * intervalMs)));
+    const maxLag = Math.min(samples.length >> 1, Math.ceil(60000 / (60 * intervalMs)));
+    let bestLag = 0;
+    let bestCorrelation = -1;
+
+    for (let lag = minLag; lag <= maxLag; lag += 1) {
+      let dot = 0;
+      let leftEnergy = 0;
+      let rightEnergy = 0;
+      for (let index = lag; index < samples.length; index += 1) {
+        const left = samples[index] - mean;
+        const right = samples[index - lag] - mean;
+        dot += left * right;
+        leftEnergy += left * left;
+        rightEnergy += right * right;
+      }
+      const denominator = Math.sqrt(leftEnergy * rightEnergy);
+      const correlation = denominator > 0 ? dot / denominator : 0;
+      if (correlation > bestCorrelation) {
+        bestCorrelation = correlation;
+        bestLag = lag;
+      }
+    }
+
+    this.bpmConfidence = Math.max(0, bestCorrelation);
+    if (bestLag === 0 || bestCorrelation < 0.12) {
+      this.notify();
+      return;
+    }
+
+    const detectedBpm = Math.round(60000 / (bestLag * intervalMs));
+    if (!Number.isFinite(detectedBpm) || detectedBpm < 60 || detectedBpm > 200) {
+      this.notify();
+      return;
+    }
+
+    if (this.currentBpm === null) {
+      this.currentBpm = detectedBpm;
+      this.bpmCandidate = null;
+      this.bpmCandidateHits = 0;
+    } else if (Math.abs(detectedBpm - this.currentBpm) <= 4) {
+      // Smooth small estimate fluctuations, so the deck display doesn't flicker.
+      this.currentBpm = Math.round(this.currentBpm * 0.65 + detectedBpm * 0.35);
+      this.bpmCandidate = null;
+      this.bpmCandidateHits = 0;
+    } else {
+      if (this.bpmCandidate !== null && Math.abs(detectedBpm - this.bpmCandidate) <= 3) {
+        this.bpmCandidate = Math.round(this.bpmCandidate * 0.5 + detectedBpm * 0.5);
+        this.bpmCandidateHits += 1;
+      } else {
+        this.bpmCandidate = detectedBpm;
+        this.bpmCandidateHits = 1;
+      }
+      // Require repeated evidence before replacing a stable reading.
+      if (this.bpmCandidateHits >= 3) {
+        this.currentBpm = this.bpmCandidate;
+        this.bpmCandidate = null;
+        this.bpmCandidateHits = 0;
+      }
+    }
+
+    this.notify();
   }
 
   get currentTimeMs(): number {

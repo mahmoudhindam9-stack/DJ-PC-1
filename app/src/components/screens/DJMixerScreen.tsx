@@ -217,6 +217,8 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   const [deckAState, setDeckAState] = useState({
     track: deckAEngine.currentTrack,
     isPlaying: deckAEngine.isPlaying,
+    currentBpm: deckAEngine.currentBpm,
+    bpmConfidence: deckAEngine.bpmConfidence,
     currentTime: deckAEngine.currentTimeMs,
     duration: deckAEngine.durationMs,
     pitch: deckAEngine.pitch,
@@ -228,6 +230,8 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   const [deckBState, setDeckBState] = useState({
     track: deckBEngine.currentTrack,
     isPlaying: deckBEngine.isPlaying,
+    currentBpm: deckBEngine.currentBpm,
+    bpmConfidence: deckBEngine.bpmConfidence,
     currentTime: deckBEngine.currentTimeMs,
     duration: deckBEngine.durationMs,
     pitch: deckBEngine.pitch,
@@ -266,6 +270,8 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
       setDeckAState({
         track: deckAEngine.currentTrack,
         isPlaying: deckAEngine.isPlaying,
+        currentBpm: deckAEngine.currentBpm,
+        bpmConfidence: deckAEngine.bpmConfidence,
         currentTime: deckAEngine.currentTimeMs,
         duration: deckAEngine.durationMs,
         pitch: deckAEngine.pitch,
@@ -279,6 +285,8 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
       setDeckBState({
         track: deckBEngine.currentTrack,
         isPlaying: deckBEngine.isPlaying,
+        currentBpm: deckBEngine.currentBpm,
+        bpmConfidence: deckBEngine.bpmConfidence,
         currentTime: deckBEngine.currentTimeMs,
         duration: deckBEngine.durationMs,
         pitch: deckBEngine.pitch,
@@ -536,13 +544,22 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
           }}
         >
           {/* Deck Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="font-black text-sm tracking-wider" style={{ color: themeColors.accentA }}>
               DECK A
             </span>
-            <span className="text-xs font-mono opacity-70">
-              {formatMs(deckAState.currentTime)} / {formatMs(deckAState.duration)}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className="rounded-md border px-2 py-1 text-[10px] font-black tabular-nums"
+                style={{ color: themeColors.accentA, borderColor: themeColors.accentA + '70', backgroundColor: themeColors.accentA + '12' }}
+                title={isArabic ? 'تحليل النبضات الصوتية في الوقت الحقيقي' : 'Real-time audio beat analysis'}
+              >
+                {deckAState.currentBpm ? `${deckAState.currentBpm} BPM` : (deckAState.isPlaying && deckAState.bpmConfidence < 0.12 ? (isArabic ? 'تحليل BPM…' : 'BPM SCAN…') : 'BPM —')}
+              </span>
+              <span className="text-xs font-mono opacity-70">
+                {formatMs(deckAState.currentTime)} / {formatMs(deckAState.duration)}
+              </span>
+            </div>
           </div>
 
           {/* Track Display Area */}
@@ -727,13 +744,22 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
           }}
         >
           {/* Deck Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="font-black text-sm tracking-wider" style={{ color: themeColors.accentB }}>
               DECK B
             </span>
-            <span className="text-xs font-mono opacity-70">
-              {formatMs(deckBState.currentTime)} / {formatMs(deckBState.duration)}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className="rounded-md border px-2 py-1 text-[10px] font-black tabular-nums"
+                style={{ color: themeColors.accentB, borderColor: themeColors.accentB + '70', backgroundColor: themeColors.accentB + '12' }}
+                title={isArabic ? 'تحليل النبضات الصوتية في الوقت الحقيقي' : 'Real-time audio beat analysis'}
+              >
+                {deckBState.currentBpm ? `${deckBState.currentBpm} BPM` : (deckBState.isPlaying && deckBState.bpmConfidence < 0.12 ? (isArabic ? 'تحليل BPM…' : 'BPM SCAN…') : 'BPM —')}
+              </span>
+              <span className="text-xs font-mono opacity-70">
+                {formatMs(deckBState.currentTime)} / {formatMs(deckBState.duration)}
+              </span>
+            </div>
           </div>
 
           {/* Track Display Area */}
