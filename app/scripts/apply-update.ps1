@@ -127,10 +127,20 @@ try {
     if (Test-Path $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 catch {
-    Write-Error $_
+    # Do not use the default Stop behavior for Write-Error here; rollback and restart must still run.
+    Write-Error $_ -ErrorAction Continue
     if ($appMoved -and (Test-Path $backupDir)) {
         if (Test-Path $AppDir) { Remove-Item -LiteralPath $AppDir -Recurse -Force -ErrorAction SilentlyContinue }
         Move-Item -LiteralPath $backupDir -Destination $AppDir -ErrorAction SilentlyContinue
+    }
+    # Download or verification failures must not leave the previous installed app closed/offline.
+    $rollbackLauncher = Join-Path $AppDir "scripts\run-dj-desktop.bat"
+    if (Test-Path $rollbackLauncher) {
+        try {
+            Start-Process -FilePath "$env:WINDIR\System32\cmd.exe" -ArgumentList ('/c "' + $rollbackLauncher + '"') -WorkingDirectory $AppDir
+        } catch {
+            Write-Error ("Could not reopen the existing version after update failure: " + $_.Exception.Message) -ErrorAction Continue
+        }
     }
     exit 1
 }
