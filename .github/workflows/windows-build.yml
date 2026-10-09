@@ -73,6 +73,7 @@ jobs:
             'app/scripts/apply-update.ps1',
             'app/scripts/set-window-always-on-top.ps1',
             'app/src/services/UpdateService.ts',
+            'app/scripts/apply-update.ps1',
             'app/src/services/LocalMusicService.ts',
             'app/src/components/screens/AIMusicStudioScreen.tsx',
             'app/scripts/setup-local-music-ai.ps1',
@@ -85,6 +86,24 @@ jobs:
               Write-Error "Missing required file: $path"
               exit 1
             }
+          }
+
+          node --check app/scripts/server.js
+          if ($LASTEXITCODE -ne 0) { throw "The update/search server failed its syntax check." }
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'app/scripts/apply-update.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          $mediaSource = Get-Content 'app/src/App.tsx' -Raw
+          foreach ($action in @('nexttrack', 'previoustrack', 'seekto')) {
+            if (-not $mediaSource.Contains($action)) { throw "Missing Media Session action: $action" }
+          }
+          $updateSource = Get-Content 'app/scripts/apply-update.ps1' -Raw
+          foreach ($requiredText in @('Downloads', 'DJ-Desktop-PC-v$TargetVersion.zip', 'Expand-And-VerifyPackage')) {
+            if (-not $updateSource.Contains($requiredText)) { throw "Missing updater behavior: $requiredText" }
           }
 
       - name: Package Windows PC release
@@ -116,8 +135,9 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: DJ Desktop Studio v${{ steps.version.outputs.version }}
           body: |
-            Automated Windows PC release.
-            Restores the Desktop Control Center window (weather, clock, and synced player controls), its title-bar entry and installed status badge; includes shared 10-band global EQ across Main Player, DJ decks, mic, sampler, radio/online audio, DJ FX, Mic voice changer, vinyl scratch, Auto Loop, Auto Fill, AI Studio, and self-updater.
+            Automated Windows PC release v3.14.0.
+            Repairs Albumaty search by artist and song title with Arabic query normalization and merged search routes; integrates browser/Windows Media Session actions for play, pause, next, previous and seeking. The updater checks Downloads for a version-specific ZIP, downloads there first, verifies the manifest and required files, reuses a valid cached copy instead of downloading duplicates, and skips installation when that version is already installed.
+            Includes the Desktop Control Center, shared global EQ, DJ FX, microphone voice effects, vinyl scratch, Auto Loop, Auto Fill, AI Studio, and self-updater.
           files: |
             DJ-Desktop-PC-v${{ steps.version.outputs.version }}.zip
             DJ-Desktop-PC-Latest.zip

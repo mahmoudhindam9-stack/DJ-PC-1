@@ -1,29 +1,97 @@
 param(
     [Parameter(Mandatory = $true)][string]$PackageUrl,
     [Parameter(Mandatory = $true)][string]$AppDir,
+    [Parameter(Mandatory = $true)][string]$TargetVersion,
     [int]$ServerPid = 0
 )
 
 $ErrorActionPreference = "Stop"
+try {
+    $target = [version]$TargetVersion
+} catch {
+    throw "Invalid target version: $TargetVersion"
+}
+
+# Refuse to replace the same version twice.
+$manifestPath = Join-Path $AppDir "package.json"
+if (Test-Path $manifestPath) {
+    try {
+        $installedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $installed = [version]$installedManifest.version
+        if ($installed -ge $target) {
+            Write-Host "[DJ Desktop] Version $installed is already installed. No update is needed."
+            exit 0
+        }
+    } catch {
+        Write-Warning "Could not read installed version; the verified update will continue."
+    }
+}
+
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $tempRoot = Join-Path $env:TEMP ("DJ-Desktop-Update-" + $stamp + "-" + [guid]::NewGuid().ToString("N"))
-$zipPath = Join-Path $tempRoot "update.zip"
+$downloadsDir = Join-Path $env:USERPROFILE "Downloads"
+$zipName = "DJ-Desktop-PC-v$TargetVersion.zip"
+$zipPath = Join-Path $downloadsDir $zipName
+$partialDownloadPath = "$zipPath.download"
+$extractRoot = Join-Path $tempRoot "package"
 $backupDir = "$AppDir.previous-$stamp"
 $appMoved = $false
 
+function Expand-And-VerifyPackage {
+    param([string]$ArchivePath, [string]$Destination, [version]$ExpectedVersion)
+
+    if (Test-Path $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Expand-Archive -LiteralPath $ArchivePath -DestinationPath $Destination -Force
+
+    $candidateApp = Join-Path $Destination "app"
+    $candidateManifestPath = Join-Path $candidateApp "package.json"
+    if (-not (Test-Path $candidateManifestPath)) { throw "The update archive is missing app\package.json." }
+    $candidateManifest = Get-Content -LiteralPath $candidateManifestPath -Raw | ConvertFrom-Json
+    $candidateVersion = [version]$candidateManifest.version
+    if ($candidateVersion -ne $ExpectedVersion) {
+        throw "The archive version ($candidateVersion) does not match requested version $ExpectedVersion."
+    }
+    if (-not (Test-Path (Join-Path $candidateApp "dist\index.html"))) {
+        throw "The update archive is missing app\dist\index.html."
+    }
+    if (-not (Test-Path (Join-Path $candidateApp "scripts\server.js"))) {
+        throw "The update archive is missing app\scripts\server.js."
+    }
+    if (-not (Test-Path (Join-Path $candidateApp "scripts\apply-update.ps1"))) {
+        throw "The update archive is missing the updater script."
+    }
+    return $candidateApp
+}
+
 try {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-    Set-Location $env:TEMP
-    Write-Host "[DJ Desktop] Downloading update package..."
-    Invoke-WebRequest -Uri $PackageUrl -OutFile $zipPath -UseBasicParsing -MaximumRedirection 8
-    Expand-Archive -LiteralPath $zipPath -DestinationPath $tempRoot -Force
+    New-Item -ItemType Directory -Path $downloadsDir -Force | Out-Null
+    $sourceApp = $null
 
-    $sourceApp = Join-Path $tempRoot "app"
-    if (-not (Test-Path (Join-Path $sourceApp "dist\index.html"))) {
-        throw "The downloaded PC update is missing app\dist\index.html."
+    # A cached archive is reused only after its version and required contents are verified.
+    if (Test-Path $zipPath) {
+        try {
+            Write-Host "[DJ Desktop] Checking saved update in Downloads: $zipPath"
+            $sourceApp = Expand-And-VerifyPackage -ArchivePath $zipPath -Destination $extractRoot -ExpectedVersion $target
+            Write-Host "[DJ Desktop] Valid v$TargetVersion package found; skipping duplicate download."
+        } catch {
+            Write-Warning "Saved package is invalid; downloading a fresh copy. $($_.Exception.Message)"
+            if (Test-Path $extractRoot) { Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue }
+            Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+            $sourceApp = $null
+        }
     }
-    if (-not (Test-Path (Join-Path $sourceApp "scripts\server.js"))) {
-        throw "The downloaded PC update is missing the application server."
+
+    if (-not $sourceApp) {
+        Remove-Item -LiteralPath $partialDownloadPath -Force -ErrorAction SilentlyContinue
+        Write-Host "[DJ Desktop] Downloading v$TargetVersion to Downloads before installing..."
+        Invoke-WebRequest -Uri $PackageUrl -OutFile $partialDownloadPath -UseBasicParsing -MaximumRedirection 8
+        if (-not (Test-Path $partialDownloadPath) -or (Get-Item $partialDownloadPath).Length -lt 1024) {
+            throw "The downloaded update archive is missing or unexpectedly small."
+        }
+        Move-Item -LiteralPath $partialDownloadPath -Destination $zipPath -Force
+        $sourceApp = Expand-And-VerifyPackage -ArchivePath $zipPath -Destination $extractRoot -ExpectedVersion $target
     }
 
     if ($ServerPid -gt 0) {
@@ -42,18 +110,21 @@ try {
     $appMoved = $true
     Move-Item -LiteralPath $sourceApp -Destination $AppDir
 
+    $installedAfter = Get-Content -LiteralPath (Join-Path $AppDir "package.json") -Raw | ConvertFrom-Json
+    if ([version]$installedAfter.version -ne $target) {
+        throw "Post-install version verification failed: expected $target, got $($installedAfter.version)."
+    }
     if (-not (Test-Path (Join-Path $AppDir "dist\index.html"))) {
         throw "Update verification failed because dist\index.html is missing."
     }
     $launcher = Join-Path $AppDir "scripts\run-dj-desktop.bat"
     if (-not (Test-Path $launcher)) { throw "The updated desktop launcher is missing." }
 
-    Write-Host "[DJ Desktop] Update installed. Reopening the application..."
+    Write-Host "[DJ Desktop] v$TargetVersion installed. Verified ZIP remains in Downloads."
+    Write-Host "[DJ Desktop] Reopening the application..."
     Start-Process -FilePath "$env:WINDIR\System32\cmd.exe" -ArgumentList ('/c "' + $launcher + '"') -WorkingDirectory $AppDir
     Start-Sleep -Seconds 3
-    if (Test-Path $backupDir) {
-        Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    if (Test-Path $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 catch {
     Write-Error $_
@@ -64,5 +135,6 @@ catch {
     exit 1
 }
 finally {
+    Remove-Item -LiteralPath $partialDownloadPath -Force -ErrorAction SilentlyContinue
     if (Test-Path $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }

@@ -775,7 +775,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
                 <div className="py-12 text-center space-y-2 text-xs" style={{ color: themeColors.textMuted }}>
                   <Search className="w-8 h-8 mx-auto opacity-40" />
                   <div className="font-bold">{isArabic ? 'لا توجد نتائج مطابقة.' : 'No matching results found.'}</div>
-                  <div>{isArabic ? 'جرّب اسم المطرب فقط أو جزءًا من اسم الأغنية.' : 'Try an artist name or a shorter part of the song title.'}</div>
+                  <div>{isArabic ? 'جرّب اسم المطرب أو عنوان الأغنية أو جزءًا من الاسم.' : 'Try an artist name, a song title, or a few words from the name.'}</div>
                 </div>
               ) : (
                 <>

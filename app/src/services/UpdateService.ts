@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.13.0';
+export const APP_VERSION = '3.14.0';
 
 export interface UpdateInfo {
   currentVersion: string;
@@ -7,6 +7,8 @@ export interface UpdateInfo {
   canAutoInstall: boolean;
   releaseUrl: string;
   assetUrl?: string;
+  downloadedPackageAvailable?: boolean;
+  downloadPath?: string;
   publishedAt?: string;
   releaseNotes?: string;
 }

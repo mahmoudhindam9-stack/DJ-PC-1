@@ -288,11 +288,12 @@ async function getAlbumatyHome() {
 function normalizeAlbumatySearchText(value) {
   return String(value || '')
     .normalize('NFKC')
-    .replace(/[\\u064B-\\u065F\\u0670\\u0640]/g, '')
+    // Remove Arabic diacritics and tatweel; normalize common letters and real whitespace.
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
     .replace(/[أإآٱ]/g, 'ا')
     .replace(/ى/g, 'ي')
     .toLocaleLowerCase('ar')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -347,10 +348,12 @@ async function getAlbumatySearch(query) {
     }
   }));
 
-  // If multiple legacy routes work, prefer the one yielding the richest set of
-  // matching records. Only matched links are returned, not the site's full homepage.
-  const best = pages.sort((left, right) => right.matches.length - left.matches.length || left.index - right.index)[0];
-  return groupAlbumatySearchResults(best?.matches || []);
+  // Legacy search endpoints may list artists on one route and songs on another.
+  // Merge their hits so a title query is not lost just because another route returned more artists.
+  const matches = pages
+    .sort((left, right) => left.index - right.index)
+    .flatMap((page) => page.matches);
+  return groupAlbumatySearchResults(matches);
 }
 
 async function getAlbumatySection(url) {
@@ -493,16 +496,21 @@ async function getLatestReleaseInfo() {
   const latestVersion = String(release.tag_name || release.name || '').replace(/^v/i, '');
   if (!latestVersion) throw new Error('The latest release did not include a version tag.');
   const assets = Array.isArray(release.assets) ? release.assets : [];
-  const pcAsset = assets.find((asset) =>
-    /dj-desktop-pc/i.test(String(asset.name || '')) && /\.zip$/i.test(String(asset.name || ''))
-  );
+  const versionedAssetName = 'DJ-Desktop-PC-v' + latestVersion + '.zip';
+  const pcAsset = assets.find((asset) => String(asset.name || '').toLowerCase() === versionedAssetName.toLowerCase()) ||
+    assets.find((asset) => String(asset.name || '').toLowerCase() === 'dj-desktop-pc-latest.zip');
+  const downloadsDir = path.join(process.env.USERPROFILE || process.env.HOME || process.cwd(), 'Downloads');
+  const versionedPackagePath = path.join(downloadsDir, versionedAssetName);
 
   return {
     currentVersion,
     latestVersion,
     updateAvailable: compareVersions(latestVersion, currentVersion) > 0,
     canAutoInstall: process.platform === 'win32' && Boolean(pcAsset && pcAsset.browser_download_url),
+    assetName: pcAsset ? String(pcAsset.name || versionedAssetName) : versionedAssetName,
     assetUrl: pcAsset ? String(pcAsset.browser_download_url || '') : '',
+    downloadedPackageAvailable: fs.existsSync(versionedPackagePath),
+    downloadPath: versionedPackagePath,
     releaseUrl: String(release.html_url || ('https://github.com/' + UPDATE_REPOSITORY + '/releases/latest')),
     publishedAt: String(release.published_at || ''),
     releaseNotes: String(release.body || '').slice(0, 3000),
@@ -918,7 +926,7 @@ async function handleApi(req, res) {
 
       const child = spawn('powershell.exe', [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updaterScript,
-        '-PackageUrl', update.assetUrl, '-AppDir', APP_DIR, '-ServerPid', String(process.pid),
+        '-PackageUrl', update.assetUrl, '-AppDir', APP_DIR, '-TargetVersion', update.latestVersion, '-ServerPid', String(process.pid),
       ], { detached: true, stdio: 'ignore', windowsHide: true });
       child.unref();
       sendJson(res, 200, { ok: true, data: { accepted: true, message: 'The update is accepted; the app will reopen after installation.' } });

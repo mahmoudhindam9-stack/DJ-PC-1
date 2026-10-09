@@ -541,7 +541,9 @@ export const App: React.FC = () => {
       return;
     }
     setUpdateStatus('installing');
-    setUpdateMessage(isArabic ? 'جاري تنزيل الإصدار الجديد؛ سيعاد فتح البرنامج تلقائيًا.' : 'Downloading the new version; the app will reopen automatically.');
+    setUpdateMessage(updateInfo.downloadedPackageAvailable
+      ? (isArabic ? 'ملف الإصدار موجود بالفعل في Downloads؛ سيتم التحقق منه واستخدامه دون تنزيل نسخة مكررة.' : 'The versioned ZIP is already in Downloads; it will be verified and reused without a duplicate download.')
+      : (isArabic ? 'سيتم تنزيل ملف التحديث والتحقق منه في Downloads أولًا، ثم تثبيته وإعادة فتح البرنامج.' : 'The update ZIP will first be downloaded and verified in Downloads, then installed before the app reopens.'));
     try {
       await updateService.installUpdate();
     } catch (error) {
@@ -578,13 +580,115 @@ export const App: React.FC = () => {
     if (!appDataLoaded || !autoUpdatesEnabled || isPlaying || !updateInfo?.updateAvailable ||
         !updateInfo.canAutoInstall || updateStatus === 'installing' || updateStatus === 'error') return;
     setUpdateStatus('installing');
-    setUpdateMessage(isArabic ? 'جاري تثبيت التحديث تلقائيًا...' : 'Installing the update automatically...');
+    setUpdateMessage(updateInfo.downloadedPackageAvailable
+      ? (isArabic ? 'يتم التحقق من ملف التحديث الموجود في Downloads قبل التثبيت...' : 'Verifying the saved update ZIP in Downloads before installation...')
+      : (isArabic ? 'يتم تنزيل التحديث إلى Downloads والتحقق منه قبل التثبيت...' : 'Downloading the update to Downloads and verifying it before installation...'));
     updateService.installUpdate().catch((error) => {
       setUpdateStatus('error');
       setUpdateMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر بدء التحديث التلقائي.' : 'Automatic installation failed.'));
     });
   }, [appDataLoaded, autoUpdatesEnabled, isPlaying, isArabic, updateInfo, updateStatus]);
 
+
+
+  // Connect the main player to Windows/browser OS media controls and media keys.
+  // Custom buttons inside the Windows taskbar thumbnail itself require a native window host.
+  const mediaActionsRef = useRef({
+    play: () => {},
+    pause: () => {},
+    next: () => {},
+    previous: () => {},
+    seek: (_positionMs: number) => {},
+    currentTimeMs: 0,
+    durationMs: 0,
+  });
+  mediaActionsRef.current = {
+    play: () => {
+      if (isPlaying) return;
+      if (currentSong) void mainAudioEngine.play();
+      else handlePlayPause();
+    },
+    pause: () => {
+      if (isPlaying) mainAudioEngine.pause();
+    },
+    next: () => handleNext(),
+    previous: () => handlePrev(),
+    seek: (positionMs: number) => handleSeek(positionMs),
+    currentTimeMs,
+    durationMs,
+  };
+
+  useEffect(() => {
+    const mediaSession = navigator.mediaSession;
+    if (!mediaSession) return;
+    const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
+      play: () => mediaActionsRef.current.play(),
+      pause: () => mediaActionsRef.current.pause(),
+      nexttrack: () => mediaActionsRef.current.next(),
+      previoustrack: () => mediaActionsRef.current.previous(),
+      seekto: (details) => {
+        if (typeof details.seekTime === 'number' && Number.isFinite(details.seekTime)) {
+          mediaActionsRef.current.seek(details.seekTime * 1000);
+        }
+      },
+      seekbackward: (details) => {
+        const offset = Number.isFinite(details.seekOffset) ? details.seekOffset! : 10;
+        mediaActionsRef.current.seek(Math.max(0, mediaActionsRef.current.currentTimeMs - offset * 1000));
+      },
+      seekforward: (details) => {
+        const offset = Number.isFinite(details.seekOffset) ? details.seekOffset! : 10;
+        const max = mediaActionsRef.current.durationMs || Number.MAX_SAFE_INTEGER;
+        mediaActionsRef.current.seek(Math.min(max, mediaActionsRef.current.currentTimeMs + offset * 1000));
+      },
+      stop: () => {
+        mediaActionsRef.current.pause();
+        mediaActionsRef.current.seek(0);
+      },
+    };
+    const registered = Object.keys(handlers) as MediaSessionAction[];
+    for (const action of registered) {
+      try { mediaSession.setActionHandler(action, handlers[action] || null); } catch { /* Platform may not support every action. */ }
+    }
+    return () => {
+      for (const action of registered) {
+        try { mediaSession.setActionHandler(action, null); } catch { /* Unsupported action. */ }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const mediaSession = navigator.mediaSession;
+    if (!mediaSession) return;
+    try {
+      mediaSession.metadata = currentSong
+        ? new MediaMetadata({
+            title: currentSong.title || 'DJ Desktop',
+            artist: currentSong.artist || 'Unknown artist',
+            album: currentSong.album || 'DJ Desktop',
+            artwork: currentSong.coverUri
+              ? [{ src: currentSong.coverUri, sizes: '512x512', type: 'image/*' }]
+              : [],
+          })
+        : null;
+      mediaSession.playbackState = currentSong ? (isPlaying ? 'playing' : 'paused') : 'none';
+    } catch {
+      // Metadata support varies across browser versions and platforms.
+    }
+  }, [currentSong?.id, currentSong?.title, currentSong?.artist, currentSong?.album, currentSong?.coverUri, isPlaying]);
+
+  useEffect(() => {
+    const mediaSession = navigator.mediaSession;
+    if (!mediaSession || durationMs <= 0) return;
+    try {
+      mediaSession.setPositionState({
+        duration: durationMs / 1000,
+        playbackRate: 1,
+        position: Math.max(0, Math.min(durationMs / 1000, currentTimeMs / 1000)),
+      });
+    } catch {
+      // Position reporting is optional.
+    }
+  }, [currentTimeMs, durationMs, currentSong?.id]);
 
   const controlChannelRef = useRef<BroadcastChannel | null>(null);
   const controlSnapshotRef = useRef<ControlPlayerState | null>(null);
