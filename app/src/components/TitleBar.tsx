@@ -12,6 +12,7 @@ import {
   Settings,
   Languages,
   Palette,
+  Sparkles,
 } from 'lucide-react';
 import { TabType, AppThemeOption, ThemeColors } from '../types';
 import { THEMES } from '../utils/theme';
@@ -46,6 +47,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     { id: 'KARAOKE', labelEn: 'Karaoke', labelAr: 'كاريوكي استوديو', icon: <Mic className="w-4 h-4" /> },
     { id: 'RADIO', labelEn: 'Radio FM', labelAr: 'راديو مباشر', icon: <Radio className="w-4 h-4" /> },
     { id: 'ONLINE_MUSIC', labelEn: 'Online Music', labelAr: 'موسيقى أونلاين', icon: <Globe className="w-4 h-4" /> },
+    { id: 'AI_STUDIO', labelEn: 'AI Studio', labelAr: 'استوديو الذكاء الاصطناعي', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'SETTINGS', labelEn: 'Settings', labelAr: 'الإعدادات', icon: <Settings className="w-4 h-4" /> },
   ];
 
@@ -76,7 +78,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           className="px-1.5 py-0.2 rounded text-[10px] font-semibold opacity-75"
           style={{ backgroundColor: themeColors.surfaceVariant }}
         >
-          v3.6.7
+          v3.6.9
         </span>
       </div>
 

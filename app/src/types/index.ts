@@ -77,6 +77,7 @@ export type TabType =
   | 'KARAOKE'
   | 'RADIO'
   | 'ONLINE_MUSIC'
+  | 'AI_STUDIO'
   | 'SETTINGS';
 
 export type LibrarySubTab = 'ALL' | 'PLAYLISTS' | 'FAVORITES' | 'ARTISTS' | 'ALBUMS' | 'FOLDERS';

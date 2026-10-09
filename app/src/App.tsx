@@ -21,6 +21,7 @@ import { EqualizerScreen } from './components/screens/EqualizerScreen';
 import { KaraokeScreen } from './components/screens/KaraokeScreen';
 import { RadioScreen } from './components/screens/RadioScreen';
 import { OnlineMusicScreen } from './components/screens/OnlineMusicScreen';
+import { AIMusicStudioScreen } from './components/screens/AIMusicStudioScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { batchImportAudioFiles } from './utils/fileImporter';
 import { DesktopSetupModal } from './components/desktop/DesktopSetupModal';
@@ -800,6 +801,21 @@ export const App: React.FC = () => {
             onAddSongToPlaylist={handleAddSongToPlaylist}
             onCreatePlaylist={handleCreatePlaylist}
             onOpenQueue={() => setShowQueue(true)}
+          />
+        )}
+
+        {activeTab === 'AI_STUDIO' && (
+          <AIMusicStudioScreen
+            themeColors={themeColors}
+            isArabic={isArabic}
+            onPlayGeneratedTrack={handlePlaySong}
+            onSendToDeckA={handleSendToDeckA}
+            onSendToDeckB={handleSendToDeckB}
+            onSaveToLibrary={async (track) => {
+              await db.addSong(track);
+              setLibrary((current) => [track, ...current.filter((song) => song.id !== track.id)]);
+              setQueue((current) => [track, ...current.filter((song) => song.id !== track.id)]);
+            }}
           />
         )}
 

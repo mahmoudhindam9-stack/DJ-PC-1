@@ -576,6 +576,114 @@ async function handleApi(req, res) {
       return true;
     }
 
+
+    if (requestUrl.pathname === '/api/lyria/generate' && req.method === 'POST') {
+      const body = await readJsonBody(req, 20000);
+      const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+      const model = body.model === 'lyria-3.5' || body.model === 'lyria-3-clip-preview' ? body.model : '';
+
+      if (!apiKey || apiKey.length > 512) {
+        sendJson(res, 400, { ok: false, error: 'Enter a valid Gemini API key to use Lyria.' });
+        return true;
+      }
+      if (!model) {
+        sendJson(res, 400, { ok: false, error: 'Choose a supported Lyria model.' });
+        return true;
+      }
+      if (prompt.length < 12 || prompt.length > 12000) {
+        sendJson(res, 400, { ok: false, error: 'The music prompt must contain between 12 and 12,000 characters.' });
+        return true;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 180000);
+      let upstream;
+      try {
+        upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+            'User-Agent': 'DJ Desktop Studio Lyria Music Studio',
+          },
+          body: JSON.stringify({
+            model,
+            input: prompt,
+            response_format: { type: 'audio' },
+          }),
+        });
+      } catch (error) {
+        const message = error && error.name === 'AbortError'
+          ? 'Lyria took longer than 3 minutes. Try a shorter clip or simpler prompt.'
+          : 'Could not reach the Gemini API. Check your internet connection.';
+        sendJson(res, 504, { ok: false, error: message });
+        return true;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      let result;
+      try {
+        result = await upstream.json();
+      } catch {
+        sendJson(res, 502, { ok: false, error: 'Gemini returned an invalid music-generation response.' });
+        return true;
+      }
+
+      if (!upstream.ok) {
+        const upstreamMessage = String(result?.error?.message || result?.message || '');
+        const statusCode = [400, 401, 403, 429].includes(upstream.status) ? upstream.status : 502;
+        const fallback = upstream.status === 429
+          ? 'Lyria usage limit reached. Check your Gemini API quota and billing.'
+          : upstream.status === 403 || upstream.status === 401
+            ? 'Gemini rejected the API key or this model is not enabled for your project.'
+            : 'Lyria could not generate this track. Try editing the prompt.';
+        sendJson(res, statusCode, { ok: false, error: (upstreamMessage || fallback).slice(0, 1200) });
+        return true;
+      }
+
+      const interaction = result?.interaction || result;
+      const audio = interaction?.output_audio || interaction?.outputAudio || null;
+      let audioBase64 = audio && typeof audio.data === 'string' ? audio.data : '';
+      let lyrics = String(interaction?.output_text || interaction?.outputText || '').trim();
+      let mimeType = String(audio?.mime_type || audio?.mimeType || 'audio/mpeg');
+
+      if ((!audioBase64 || !lyrics) && Array.isArray(interaction?.steps)) {
+        const textBlocks = [];
+        for (const step of interaction.steps) {
+          if (step?.type !== 'model_output' || !Array.isArray(step.content)) continue;
+          for (const block of step.content) {
+            if (!audioBase64 && block?.type === 'audio' && typeof block.data === 'string') {
+              audioBase64 = block.data;
+              mimeType = String(block.mime_type || block.mimeType || mimeType);
+            } else if (block?.type === 'text' && typeof block.text === 'string') {
+              textBlocks.push(block.text);
+            }
+          }
+        }
+        if (!lyrics && textBlocks.length) lyrics = textBlocks.join('\n\n');
+      }
+
+      if (!audioBase64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(audioBase64)) {
+        sendJson(res, 502, { ok: false, error: 'Lyria returned no playable audio. Try generating again.' });
+        return true;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          model,
+          audioBase64,
+          mimeType: mimeType.startsWith('audio/') ? mimeType : 'audio/mpeg',
+          lyrics,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+      return true;
+    }
+
     if (requestUrl.pathname === '/api/update/check' && req.method === 'GET') {
       sendJson(res, 200, { ok: true, data: await getLatestReleaseInfo() });
       return true;
