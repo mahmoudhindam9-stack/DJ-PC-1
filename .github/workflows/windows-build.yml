@@ -117,7 +117,7 @@ jobs:
           name: DJ Desktop Studio v${{ steps.version.outputs.version }}
           body: |
             Automated Windows PC release.
-            Includes complete Windows setup, shared 10-band global EQ for Main Player, both DJ decks, live microphone and sampler, plus Radio and Online Music routed through the equalized main player; also includes audible DJ FX, Mic voice changer, BPM-synced Beat FX, vinyl scratch, Auto Loop, Auto Fill, AI Studio, and self-updater.
+            Restores the Desktop Control Center window (weather, clock, and synced player controls), its title-bar entry and installed status badge; includes shared 10-band global EQ across Main Player, DJ decks, mic, sampler, radio/online audio, DJ FX, Mic voice changer, vinyl scratch, Auto Loop, Auto Fill, AI Studio, and self-updater.
           files: |
             DJ-Desktop-PC-v${{ steps.version.outputs.version }}.zip
             DJ-Desktop-PC-Latest.zip

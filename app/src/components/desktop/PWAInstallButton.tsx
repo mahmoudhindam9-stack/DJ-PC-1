@@ -17,9 +17,24 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   const { isInstallable, isInstalled, install, isIOS } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
-  // If already running inside standalone app, do not render any button
+  // Keep a visible desktop-installed status and allow reopening setup options.
   if (isInstalled) {
-    return null;
+    return (
+      <button
+        type="button"
+        onClick={onOpenSetupModal}
+        title={isArabic ? 'مثبت على سطح المكتب' : 'Installed on Desktop'}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:bg-white/10"
+        style={{
+          borderColor: 'rgba(16, 185, 129, 0.4)',
+          backgroundColor: 'rgba(16, 185, 129, 0.15)',
+          color: '#34d399',
+        }}
+      >
+        <Check className="w-3.5 h-3.5" />
+        <span>{isArabic ? 'مثبت لسطح المكتب' : 'Desktop Installed'}</span>
+      </button>
+    );
   }
 
   // If browser has prompted beforeinstallprompt

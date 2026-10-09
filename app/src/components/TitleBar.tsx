@@ -13,6 +13,7 @@ import {
   Languages,
   Palette,
   Sparkles,
+  Monitor,
 } from 'lucide-react';
 import { TabType, AppThemeOption, ThemeColors } from '../types';
 import { THEMES } from '../utils/theme';
@@ -40,6 +41,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onToggleLanguage,
   themeColors,
   onOpenSetupModal,
+  onOpenControlPanel,
 }) => {
   const tabs: Array<{ id: TabType; labelEn: string; labelAr: string; icon: React.ReactNode }> = [
     { id: 'LIBRARY', labelEn: 'Library', labelAr: 'المكتبة', icon: <Music className="w-4 h-4" /> },
@@ -115,6 +117,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           isArabic={isArabic}
           onOpenSetupModal={onOpenSetupModal}
         />
+        <button
+          type="button"
+          onClick={onOpenControlPanel}
+          className="p-1.5 rounded transition-colors hover:brightness-110 flex items-center gap-1.5 text-[11px] border"
+          style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border, color: themeColors.textPrimary }}
+          title={isArabic ? 'فتح لوحة تحكم مستقلة للسطح المكتب' : 'Open separate desktop control panel'}
+          aria-label={isArabic ? 'لوحة تحكم سطح المكتب' : 'Desktop Control Center'}
+        >
+          <Monitor className="w-3.5 h-3.5" />
+          <span className="hidden xl:inline">{isArabic ? 'لوحة التحكم' : 'Control Center'}</span>
+        </button>
 
         {/* Language switch */}
         <button
