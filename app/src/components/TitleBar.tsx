@@ -100,6 +100,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 backgroundColor: isActive ? themeColors.primary : 'transparent',
                 color: isActive ? '#ffffff' : themeColors.textSecondary,
               }}
+              data-active={isActive ? 'true' : undefined}
               title={isArabic ? tab.labelAr : tab.labelEn}
             >
               {tab.icon}

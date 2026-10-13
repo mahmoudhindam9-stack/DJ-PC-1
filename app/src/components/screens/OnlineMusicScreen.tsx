@@ -535,6 +535,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
 
   return (
     <div
+      id="online-music-screen"
       className="flex-1 flex flex-col min-h-0 overflow-hidden p-4"
       style={{
         backgroundColor: themeColors.background,

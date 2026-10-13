@@ -817,7 +817,11 @@ export const App: React.FC = () => {
       style={{
         backgroundColor: themeColors.background,
         color: themeColors.textPrimary,
-      }}
+        '--dj-ui-primary': themeColors.primary,
+        '--dj-ui-secondary': themeColors.secondary,
+        '--dj-ui-surface': themeColors.surface,
+        '--dj-ui-border': themeColors.border,
+      } as React.CSSProperties}
     >
       {/* Top Windows Native Desktop Title Bar */}
       <TitleBar

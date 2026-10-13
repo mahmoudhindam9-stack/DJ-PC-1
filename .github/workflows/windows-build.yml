@@ -135,11 +135,10 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: DJ Desktop Studio v${{ steps.version.outputs.version }}
           body: |
-            Automated Windows PC release v3.14.3.
-            Fixes Windows self-update by launching a temporary updater copy from TEMP, avoiding app-directory replacement failures caused by the updater's working directory. Preserves version verification, Downloads caching, rollback, and relaunch.
-            Fixes Albumaty downloads when MP3 files are hosted on a public HTTPS CDN outside albumaty.com. The proxy validates the final redirect destination and rejects local/private host patterns. Keeps Arabic search normalization, Audius downloads, media-session controls, and the verified self-updater.
-            Repairs Albumaty search by artist and song title with Arabic query normalization and merged search routes; integrates browser/Windows Media Session actions for play, pause, next, previous and seeking. The updater checks Downloads for a version-specific ZIP, downloads there first, verifies the manifest and required files, reuses a valid cached copy instead of downloading duplicates, and skips installation when that version is already installed.
-            Includes the Desktop Control Center, shared global EQ, DJ FX, microphone voice effects, vinyl scratch, Auto Loop, Auto Fill, AI Studio, and self-updater.
+            Automated Windows PC release v3.14.4.
+            Premium desktop UI overhaul across Library, DJ Studio, Equalizer, Karaoke, Radio, Online Music, AI Studio, Settings, and the docked player.
+            Refines navigation states, typography, card elevation, search/input focus, track selection feedback, scroll spacing, responsive sizing, modal surfaces, and reduced-motion accessibility.
+            Preserves audio-engine behavior, crossfade, playlists, downloads, radio playback, desktop control center, and self-update flow.
           files: |
             DJ-Desktop-PC-v${{ steps.version.outputs.version }}.zip
             DJ-Desktop-PC-Latest.zip
