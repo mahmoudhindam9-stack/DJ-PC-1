@@ -73,6 +73,21 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
 
   const [actionFeedback, setActionFeedback] = useState('');
   const feedbackTimerRef = useRef<number | null>(null);
+  const lastObservedStateRef = useRef({
+    songId: currentSong?.id ?? null,
+    isPlaying,
+    playbackMode,
+  });
+
+  const primaryTextColor = (() => {
+    const match = /^#?([0-9a-f]{6})$/i.exec(themeColors.primary);
+    if (!match) return '#FFFFFF';
+    const hex = match[1];
+    const channels = [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+    const linear = channels.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+    const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+    return luminance > 0.48 ? '#111827' : '#FFFFFF';
+  })();
   const seekHoldDelayRef = useRef<number | null>(null);
   const seekHoldIntervalRef = useRef<number | null>(null);
   const announceAction = (message: string) => {
@@ -93,6 +108,34 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     announceAction(deltaMs < 0 ? (isArabic ? 'تم الرجوع 10 ثوانٍ' : 'Skipped back 10 seconds') : (isArabic ? 'تم التقديم 10 ثوانٍ' : 'Skipped forward 10 seconds'));
     seekHoldDelayRef.current = window.setTimeout(() => { seekHoldIntervalRef.current = window.setInterval(() => onSeekBy(deltaMs), 250); }, 380);
   };
+  useEffect(() => {
+    const previous = lastObservedStateRef.current;
+    const nextSongId = currentSong?.id ?? null;
+
+    if (previous.songId !== nextSongId && currentSong) {
+      announceAction((isArabic ? 'الأغنية الحالية: ' : 'Now playing: ') + currentSong.title);
+    } else if (previous.isPlaying !== isPlaying) {
+      announceAction(isPlaying
+        ? (isArabic ? 'تم تأكيد بدء التشغيل' : 'Playback started')
+        : (isArabic ? 'تم تأكيد الإيقاف المؤقت' : 'Playback paused'));
+    } else if (previous.playbackMode !== playbackMode) {
+      const modeLabel = playbackMode === 'SHUFFLE'
+        ? (isArabic ? 'التشغيل العشوائي' : 'Shuffle')
+        : playbackMode === 'REPEAT_ONE'
+          ? (isArabic ? 'تكرار الأغنية' : 'Repeat one')
+          : playbackMode === 'REPEAT_ALL'
+            ? (isArabic ? 'تكرار القائمة' : 'Repeat all')
+            : (isArabic ? 'التشغيل العادي' : 'Normal playback');
+      announceAction((isArabic ? 'الوضع الحالي: ' : 'Mode confirmed: ') + modeLabel);
+    }
+
+    lastObservedStateRef.current = {
+      songId: nextSongId,
+      isPlaying,
+      playbackMode,
+    };
+  }, [currentSong?.id, currentSong?.title, isPlaying, playbackMode, isArabic]);
+
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
     stopSeekHold();
@@ -106,7 +149,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         backgroundColor: themeColors.surface,
         borderColor: themeColors.border,
         color: themeColors.textPrimary,
-      }}
+        '--dj-ui-primary': themeColors.primary,
+        '--dj-ui-border': themeColors.border,
+        '--dj-ui-secondary': themeColors.textSecondary,
+        '--dj-ui-muted': themeColors.textMuted,
+        '--dj-ui-surface': themeColors.surface,
+        '--dj-ui-surface-variant': themeColors.surfaceVariant,
+      } as React.CSSProperties}
     >
       {/* Top Scrubber */}
       <div className="flex items-center gap-2 w-full text-[11px]">
@@ -181,24 +230,24 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
             </h4>
             <p className="text-[11px] truncate leading-tight flex items-center gap-2" style={{ color: themeColors.textMuted }}>
               <span className="truncate">{currentSong ? currentSong.artist : isArabic ? 'اختر أغنية للبدء' : 'Select a song to start'}</span>
-              {currentSong && <span className="dj-now-playing-badge shrink-0">{isPlaying && <span className="dj-playing-indicator mr-1"><i /><i /><i /></span>}{isPlaying ? (isArabic ? 'يعمل الآن' : 'PLAYING') : (isArabic ? 'متوقف مؤقتًا' : 'PAUSED')}</span>}
+              {currentSong && <span className="dj-now-playing-badge shrink-0" data-playing={isPlaying ? 'true' : 'false'} style={{ '--dj-track-accent': isPlaying ? themeColors.tertiary : themeColors.textMuted } as React.CSSProperties}>{isPlaying && <span className="dj-playing-indicator mr-1"><i /><i /><i /></span>}{isPlaying ? (isArabic ? 'يعمل الآن' : 'PLAYING') : (isArabic ? 'متوقف مؤقتًا' : 'PAUSED')}</span>}
             </p>
           </div>
         </div>
 
         {/* Playback controls with distinct hit targets and visible feedback. */}
         <div className="flex items-center gap-1.5 sm:gap-2" aria-label={isArabic ? 'أدوات تشغيل الأغاني' : 'Playback controls'}>
-          <button type="button" onClick={() => { onTogglePlaybackMode(); announceAction(isArabic ? 'تم تغيير وضع التشغيل' : 'Playback mode changed'); }} className="player-control-button p-2 rounded-lg" title={playbackMode === 'SHUFFLE' ? (isArabic ? 'العشوائي مفعّل' : 'Shuffle active') : playbackMode === 'REPEAT_ONE' ? (isArabic ? 'تكرار الأغنية' : 'Repeat one') : playbackMode === 'REPEAT_ALL' ? (isArabic ? 'تكرار القائمة' : 'Repeat all') : (isArabic ? 'تشغيل عادي' : 'Normal playback')} aria-label={isArabic ? 'تغيير وضع التشغيل' : 'Change playback mode'} aria-pressed={playbackMode !== 'NORMAL'} data-active={playbackMode !== 'NORMAL' ? 'true' : 'false'} style={{ color: playbackMode !== 'NORMAL' ? themeColors.primary : themeColors.textMuted }}>
+          <button type="button" onClick={() => { onTogglePlaybackMode(); announceAction(isArabic ? 'جارٍ تحديث وضع التشغيل…' : 'Updating playback mode…'); }} className="player-control-button player-mode-button p-2 rounded-lg" title={playbackMode === 'SHUFFLE' ? (isArabic ? 'العشوائي مفعّل' : 'Shuffle active') : playbackMode === 'REPEAT_ONE' ? (isArabic ? 'تكرار الأغنية' : 'Repeat one') : playbackMode === 'REPEAT_ALL' ? (isArabic ? 'تكرار القائمة' : 'Repeat all') : (isArabic ? 'تشغيل عادي' : 'Normal playback')} aria-label={isArabic ? 'تغيير وضع التشغيل' : 'Change playback mode'} aria-pressed={playbackMode !== 'NORMAL'} data-active={playbackMode !== 'NORMAL' ? 'true' : 'false'} style={{ color: playbackMode !== 'NORMAL' ? themeColors.primary : themeColors.textMuted }}>
             {playbackMode === 'REPEAT_ONE' ? <Repeat1 className="w-4 h-4" /> : playbackMode === 'SHUFFLE' ? <Shuffle className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
           </button>
           <button type="button" onPointerDown={(event) => startSeekHold(-10000, event)} onPointerUp={stopSeekHold} onPointerCancel={stopSeekHold} onLostPointerCapture={stopSeekHold} onClick={(event) => { if (event.detail === 0) { onSeekBy(-10000); announceAction(isArabic ? 'تم الرجوع 10 ثوانٍ' : 'Skipped back 10 seconds'); } }} onContextMenu={(event) => event.preventDefault()} disabled={!currentSong} className="player-control-button relative p-2 rounded-lg" title={isArabic ? 'الرجوع 10 ثوانٍ — اضغط مطولًا للاستمرار' : 'Back 10 seconds — hold to keep seeking'} aria-label={isArabic ? 'الرجوع 10 ثوانٍ، اضغط مطولًا للاستمرار' : 'Seek backward 10 seconds; hold to continue'} style={{ color: themeColors.textSecondary }}>
             <Rewind className="w-4 h-4" /><span className="absolute -bottom-0.5 right-0.5 text-[8px] font-black leading-none">10</span>
           </button>
-          <button type="button" onClick={() => { onPrev(); announceAction(isArabic ? 'تم تنفيذ أمر السابق' : 'Previous-track command sent'); }} className="player-control-button p-2 rounded-lg" title={isArabic ? 'الأغنية السابقة' : 'Previous track'} aria-label={isArabic ? 'الأغنية السابقة' : 'Previous track'} style={{ color: themeColors.textSecondary }}><SkipBack className="w-4 h-4" /></button>
-          <button type="button" onClick={() => { onPlayPause(); announceAction(isArabic ? 'تم تحديث حالة التشغيل' : 'Playback state updated'); }} className="player-control-button player-main-play-button p-2.5 rounded-xl" style={{ backgroundColor: themeColors.primary, borderColor: themeColors.primary, color: '#ffffff' }} title={isPlaying ? (isArabic ? 'إيقاف مؤقت' : 'Pause') : (isArabic ? 'تشغيل' : 'Play')} aria-label={isPlaying ? (isArabic ? 'إيقاف مؤقت' : 'Pause') : (isArabic ? 'تشغيل' : 'Play')} aria-pressed={isPlaying}>
+          <button type="button" onClick={() => { onPrev(); announceAction(isArabic ? 'جارٍ الانتقال للأغنية السابقة…' : 'Switching to previous track…'); }} disabled={!currentSong} className="player-control-button p-2 rounded-lg" title={isArabic ? 'الأغنية السابقة' : 'Previous track'} aria-label={isArabic ? 'الأغنية السابقة' : 'Previous track'} style={{ color: themeColors.textSecondary }}><SkipBack className="w-4 h-4" /></button>
+          <button type="button" onClick={() => { onPlayPause(); announceAction(isPlaying ? (isArabic ? 'جارٍ إيقاف التشغيل مؤقتًا…' : 'Pausing playback…') : (isArabic ? 'جارٍ بدء التشغيل…' : 'Starting playback…')); }} disabled={!currentSong} data-playing={isPlaying ? 'true' : 'false'} className="player-control-button player-main-play-button p-2.5 rounded-xl" style={{ backgroundColor: themeColors.primary, borderColor: themeColors.primary, color: primaryTextColor }} title={isPlaying ? (isArabic ? 'إيقاف مؤقت' : 'Pause') : (isArabic ? 'تشغيل' : 'Play')} aria-label={isPlaying ? (isArabic ? 'إيقاف مؤقت' : 'Pause') : (isArabic ? 'تشغيل' : 'Play')} aria-pressed={isPlaying}>
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
           </button>
-          <button type="button" onClick={() => { onNext(); announceAction(isArabic ? 'تم تنفيذ أمر التالي' : 'Next-track command sent'); }} className="player-control-button p-2 rounded-lg" title={isArabic ? 'الأغنية التالية' : 'Next track'} aria-label={isArabic ? 'الأغنية التالية' : 'Next track'} style={{ color: themeColors.textSecondary }}><SkipForward className="w-4 h-4" /></button>
+          <button type="button" onClick={() => { onNext(); announceAction(isArabic ? 'جارٍ الانتقال للأغنية التالية…' : 'Switching to next track…'); }} disabled={!currentSong} className="player-control-button p-2 rounded-lg" title={isArabic ? 'الأغنية التالية' : 'Next track'} aria-label={isArabic ? 'الأغنية التالية' : 'Next track'} style={{ color: themeColors.textSecondary }}><SkipForward className="w-4 h-4" /></button>
           <button type="button" onPointerDown={(event) => startSeekHold(10000, event)} onPointerUp={stopSeekHold} onPointerCancel={stopSeekHold} onLostPointerCapture={stopSeekHold} onClick={(event) => { if (event.detail === 0) { onSeekBy(10000); announceAction(isArabic ? 'تم التقديم 10 ثوانٍ' : 'Skipped forward 10 seconds'); } }} onContextMenu={(event) => event.preventDefault()} disabled={!currentSong} className="player-control-button relative p-2 rounded-lg" title={isArabic ? 'التقديم 10 ثوانٍ — اضغط مطولًا للاستمرار' : 'Forward 10 seconds — hold to keep seeking'} aria-label={isArabic ? 'التقديم 10 ثوانٍ، اضغط مطولًا للاستمرار' : 'Seek forward 10 seconds; hold to continue'} style={{ color: themeColors.textSecondary }}>
             <FastForward className="w-4 h-4" /><span className="absolute -bottom-0.5 right-0.5 text-[8px] font-black leading-none">10</span>
           </button>
@@ -258,8 +307,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
           </button>
         </div>
       </div>
-      <div className="h-4 text-center text-[10px] leading-4 transition-opacity" role="status" aria-live="polite" style={{ color: themeColors.primary, opacity: actionFeedback ? 1 : 0 }}>
-        {actionFeedback || ' '}
+      <div className="player-action-feedback" data-has-feedback={actionFeedback ? 'true' : 'false'} role="status" aria-live="polite" aria-atomic="true" style={{ color: themeColors.textSecondary, borderColor: actionFeedback ? themeColors.primary : themeColors.border, backgroundColor: actionFeedback ? themeColors.surfaceVariant : 'transparent' }}>
+        <span className="player-action-status-dot" data-playing={isPlaying ? 'true' : 'false'} aria-hidden="true" />
+        <span className="truncate">{actionFeedback || (currentSong
+          ? (isPlaying ? (isArabic ? 'يعمل الآن' : 'PLAYING') : (isArabic ? 'متوقف مؤقتًا' : 'PAUSED')) + ' · ' + currentSong.title
+          : (isArabic ? 'جاهز — اختر أغنية للتشغيل' : 'Ready — select a track'))}</span>
       </div>
     </footer>
   );
