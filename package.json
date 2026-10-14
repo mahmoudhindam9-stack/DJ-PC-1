@@ -3,6 +3,9 @@
   "version": "3.9.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "app"
+  ],
   "scripts": {
     "dev": "npm --prefix app run dev",
     "build": "npm --prefix app run build",
