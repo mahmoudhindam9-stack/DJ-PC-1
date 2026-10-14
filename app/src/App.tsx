@@ -28,8 +28,33 @@ import { DesktopSetupModal } from './components/desktop/DesktopSetupModal';
 import { updateService, type UpdateInfo, type UpdateStatus } from './services/UpdateService';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { isTauri } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { exists, writeFile } from '@tauri-apps/plugin-fs';
+import { getOnlineDownloadEndpoint } from './services/OnlineMusicService';
 import { CONTROL_CHANNEL_NAME, type DesktopControlCommand, type DesktopControlMessage, type ControlPlayerState } from './services/ControlChannel';
 
+
+type BrowserDownloadWritable = {
+  write: (data: Uint8Array) => Promise<void>;
+  close: () => Promise<void>;
+};
+type BrowserDownloadFile = {
+  createWritable: () => Promise<BrowserDownloadWritable>;
+};
+type BrowserDownloadDirectory = {
+  getFileHandle: (name: string, options?: { create?: boolean }) => Promise<BrowserDownloadFile>;
+};
+
+function safeDownloadName(value: string): string {
+  const safe = value
+    .normalize('NFKC')
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .trim()
+    .slice(0, 100);
+  return safe || 'song';
+}
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('LIBRARY');
@@ -63,6 +88,8 @@ export const App: React.FC = () => {
   // Modals
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
+  const [isDownloadingOnlineQueue, setIsDownloadingOnlineQueue] = useState(false);
   const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
   const [appDataLoaded, setAppDataLoaded] = useState(false);
   const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(true);
@@ -295,6 +322,9 @@ export const App: React.FC = () => {
       const validIds = new Set(customQueue.map((track) => track.id));
       shuffleBagRef.current = shuffleBagRef.current.filter((id) => validIds.has(id));
       shuffleHistoryRef.current = shuffleHistoryRef.current.filter((id) => validIds.has(id));
+    } else if (!song.id.startsWith('radio_')) {
+      // Directly played online songs join the queue so the next item can preload/crossfade.
+      setQueue((current) => current.some((track) => track.id === song.id) ? current : [song, ...current]);
     }
 
     if (
@@ -379,8 +409,20 @@ export const App: React.FC = () => {
   };
 
   const handleSeek = (positionMs: number) => {
-    mainAudioEngine.seekTo(positionMs);
-    setCurrentTimeMs(positionMs);
+    const engineDuration = mainAudioEngine.durationMs;
+    const safeDuration = engineDuration > 0 ? engineDuration : durationMs;
+    const safePosition = Math.max(0, safeDuration > 0 ? Math.min(safeDuration, positionMs) : positionMs);
+    mainAudioEngine.seekTo(safePosition);
+    setCurrentTimeMs(safePosition);
+  };
+
+  const handleSeekBy = (deltaMs: number) => {
+    const engineTime = mainAudioEngine.currentTimeMs;
+    const current = Number.isFinite(engineTime) ? engineTime : currentTimeMs;
+    const engineDuration = mainAudioEngine.durationMs;
+    const safeDuration = engineDuration > 0 ? engineDuration : durationMs;
+    const target = Math.max(0, current + deltaMs);
+    handleSeek(safeDuration > 0 ? Math.min(safeDuration, target) : target);
   };
 
   const handleVolumeChange = (v: number) => {
@@ -465,7 +507,104 @@ export const App: React.FC = () => {
   };
 
   const handleEnqueueSong = (song: AudioItem) => {
-    setQueue([...queue, song]);
+    setQueue((current) => [...current, song]);
+  };
+
+  const handleDownloadOnlineTracks = async (tracks: AudioItem[]) => {
+    const downloadableTracks = tracks.filter((track) => Boolean(getOnlineDownloadEndpoint(track)));
+    if (!downloadableTracks.length || isDownloadingOnlineQueue) return;
+
+    setIsDownloadingOnlineQueue(true);
+    setDownloadProgress(isArabic ? 'جاري تجهيز التنزيل…' : 'Preparing downloads…');
+    try {
+      let folderPath: string | null = null;
+      let browserFolder: BrowserDownloadDirectory | null = null;
+      if (isTauri()) {
+        const selected = await openDialog({
+          directory: true,
+          multiple: false,
+          title: isArabic ? 'اختر مجلد حفظ الأغاني' : 'Choose a folder for downloaded songs',
+        });
+        if (typeof selected !== 'string' || !selected) {
+          setDownloadProgress(null);
+          return;
+        }
+        folderPath = selected;
+      } else {
+        const pickerWindow = window as unknown as { showDirectoryPicker?: () => Promise<BrowserDownloadDirectory> };
+        if (!pickerWindow.showDirectoryPicker) {
+          setDownloadProgress(isArabic
+            ? 'اختيار مجلد التنزيل يحتاج إلى نسخة سطح المكتب أو متصفح يدعم اختيار المجلدات.'
+            : 'Folder selection requires the desktop app or a browser that supports folder picking.');
+          return;
+        }
+        browserFolder = await pickerWindow.showDirectoryPicker();
+      }
+
+      let completed = 0;
+      const failures: string[] = [];
+      const usedNames = new Set<string>();
+      for (let index = 0; index < downloadableTracks.length; index += 1) {
+        const track = downloadableTracks[index];
+        const endpoint = getOnlineDownloadEndpoint(track);
+        if (!endpoint) continue;
+        setDownloadProgress(isArabic
+          ? `جاري تنزيل ${index + 1}/${downloadableTracks.length}: ${track.title}`
+          : `Downloading ${index + 1}/${downloadableTracks.length}: ${track.title}`);
+        try {
+          const response = await fetch(endpoint, { headers: { Accept: 'audio/*, application/octet-stream, */*' } });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+            throw new Error(payload?.error || payload?.message || 'The service did not return an audio file.');
+          }
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          if (!bytes.byteLength) throw new Error('The downloaded file is empty.');
+          const baseName = `${safeDownloadName(track.title)} - ${safeDownloadName(track.artist)}.mp3`;
+          const dot = baseName.lastIndexOf('.');
+          const stem = baseName.slice(0, dot);
+          const extension = baseName.slice(dot);
+          let name = baseName;
+          let suffix = 2;
+          while (usedNames.has(name)) name = `${stem} (${suffix++})${extension}`;
+
+          if (folderPath) {
+            let target = await join(folderPath, name);
+            while (await exists(target)) {
+              name = `${stem} (${suffix++})${extension}`;
+              target = await join(folderPath, name);
+            }
+            await writeFile(target, bytes);
+          } else if (browserFolder) {
+            while (true) {
+              try { await browserFolder.getFileHandle(name); name = `${stem} (${suffix++})${extension}`; }
+              catch { break; }
+            }
+            const file = await browserFolder.getFileHandle(name, { create: true });
+            const writable = await file.createWritable();
+            await writable.write(bytes);
+            await writable.close();
+          } else {
+            throw new Error('No destination folder was selected.');
+          }
+          usedNames.add(name);
+          completed += 1;
+        } catch (error) {
+          failures.push(`${track.title}: ${error instanceof Error ? error.message : 'Download failed'}`);
+        }
+      }
+      setDownloadProgress(failures.length === 0
+        ? (isArabic ? `اكتمل التنزيل بنجاح: ${completed} أغنية.` : `Download complete: ${completed} song(s) saved.`)
+        : (isArabic
+          ? `انتهى التنزيل: نجح ${completed} وفشل ${failures.length}. أول خطأ: ${failures[0]}`
+          : `Download finished: ${completed} succeeded, ${failures.length} failed. First error: ${failures[0]}`));
+    } catch (error) {
+      const cancelled = error instanceof DOMException && error.name === 'AbortError';
+      setDownloadProgress(cancelled ? null : (error instanceof Error ? error.message : (isArabic ? 'فشل تنزيل الأغاني.' : 'Could not download the songs.')));
+    } finally {
+      setIsDownloadingOnlineQueue(false);
+    }
   };
 
   // DJ Deck Routing
@@ -962,6 +1101,7 @@ export const App: React.FC = () => {
         onNext={handleNext}
         onPrev={handlePrev}
         onSeek={handleSeek}
+        onSeekBy={handleSeekBy}
         onVolumeChange={handleVolumeChange}
         onTogglePlaybackMode={handleTogglePlaybackMode}
         onOpenQueue={() => setShowQueue(true)}
@@ -1006,6 +1146,7 @@ export const App: React.FC = () => {
         <QueueModal
           queue={queue}
           currentSong={currentSong}
+          isPlaying={isPlaying}
           themeColors={themeColors}
           isArabic={isArabic}
           onClose={() => setShowQueue(false)}
@@ -1018,6 +1159,9 @@ export const App: React.FC = () => {
           onClearQueue={() => setQueue([])}
           playlists={playlists}
           onAddToPlaylist={handleAddSongToPlaylist}
+          onDownloadOnlineTracks={handleDownloadOnlineTracks}
+          downloadProgress={downloadProgress}
+          isDownloadingOnlineQueue={isDownloadingOnlineQueue}
         />
       )}
 

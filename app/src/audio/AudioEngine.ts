@@ -49,9 +49,13 @@ export class AudioEngine {
 
   private readonly primaryTimeUpdateHandler = () => {
     const cur = this.audioElement.currentTime * 1000;
-    const dur = (this.audioElement.duration || 0) * 1000;
+    const dur = this.durationMs;
     this.onTimeUpdateListeners.forEach((fn) => fn(cur, dur));
     this.checkAutomaticCrossfade();
+  };
+
+  private readonly crossfadeReadyHandler = () => {
+    if (this.isPlaying) this.checkAutomaticCrossfade();
   };
 
   private readonly primaryPlayHandler = () => {
@@ -79,6 +83,7 @@ export class AudioEngine {
     this.crossfadeAudioElement = new Audio();
     this.crossfadeAudioElement.preload = 'auto';
     this.crossfadeAudioElement.crossOrigin = 'anonymous';
+    this.crossfadeAudioElement.addEventListener('canplay', this.crossfadeReadyHandler);
     this.attachPrimaryListeners();
     this.publishGlobalEqProfile();
   }
@@ -289,10 +294,18 @@ export class AudioEngine {
       this.crossfadeDurationSeconds <= 0 || this.crossfadeInProgress || !this.isPlaying ||
       !this.currentTrack || !this.standbyTrack || this.standbyTrack.id === this.currentTrack.id
     ) return;
-    const totalMs = this.durationMs;
+
+    // Some online streams expose NaN/Infinity duration while their metadata has a duration.
+    const mediaDurationMs = (this.audioElement.duration || 0) * 1000;
+    const totalMs = Number.isFinite(mediaDurationMs) && mediaDurationMs > 0
+      ? mediaDurationMs
+      : (this.currentTrack.duration || 0);
     if (!Number.isFinite(totalMs) || totalMs <= 0) return;
     const remainingMs = totalMs - this.currentTimeMs;
     if (remainingMs <= 0 || remainingMs > this.crossfadeDurationSeconds * 1000) return;
+
+    // Do not start a ramp while the next source is still silent/loading; retry on canplay.
+    if (this.crossfadeAudioElement.readyState < 2) return;
     void this.beginAutomaticCrossfade(remainingMs);
   }
 
@@ -440,7 +453,11 @@ export class AudioEngine {
 
   get isPlaying(): boolean { return !this.audioElement.paused && !this.audioElement.ended; }
   get currentTimeMs(): number { return (this.audioElement.currentTime || 0) * 1000; }
-  get durationMs(): number { return (this.audioElement.duration || 0) * 1000; }
+  get durationMs(): number {
+    const mediaDurationMs = (this.audioElement.duration || 0) * 1000;
+    if (Number.isFinite(mediaDurationMs) && mediaDurationMs > 0) return mediaDurationMs;
+    return this.currentTrack?.duration || 0;
+  }
 
   // --- EQUALIZER & EFFECTS ---
   get eqEnabled(): boolean {
