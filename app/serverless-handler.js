@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     const forwardedPath = incoming.searchParams.get('__path');
     if (forwardedPath !== null) {
       incoming.searchParams.delete('__path');
-      const cleanPath = forwardedPath.replace(/^\\/+/, '');
+      const cleanPath = forwardedPath.split('/').filter(Boolean).join('/');
       const segments = cleanPath.split('/');
       if (!cleanPath || segments.some((segment) => !segment || segment === '.' || segment === '..')) {
         res.statusCode = 400;
