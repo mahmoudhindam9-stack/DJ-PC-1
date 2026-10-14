@@ -7,6 +7,21 @@
   "functions": {
     "api/[...path].js": {
       "maxDuration": 60
+    },
+    "api/albumaty/stream.js": {
+      "maxDuration": 60
+    },
+    "api/albumaty/download.js": {
+      "maxDuration": 60
+    },
+    "api/online/stream.js": {
+      "maxDuration": 60
+    },
+    "api/online/download.js": {
+      "maxDuration": 60
+    },
+    "api/local-music/generate.js": {
+      "maxDuration": 60
     }
   }
 }
