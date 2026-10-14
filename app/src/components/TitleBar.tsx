@@ -110,25 +110,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         })}
       </nav>
 
-      {/* Right Controls: Desktop Setup / PWA Install, Quick Theme, Language, Window buttons */}
+      {/* Right Controls: Quick Theme, Language, Window buttons */}
       <div className="flex items-center gap-1.5">
-        {/* Desktop Setup / PWA Installer Button */}
-        <PWAInstallButton
-          themeColors={themeColors}
-          isArabic={isArabic}
-          onOpenSetupModal={onOpenSetupModal}
-        />
-        <button
-          type="button"
-          onClick={onOpenControlPanel}
-          className="p-1.5 rounded transition-colors hover:brightness-110 flex items-center gap-1.5 text-[11px] border"
-          style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border, color: themeColors.textPrimary }}
-          title={isArabic ? 'فتح لوحة تحكم مستقلة للسطح المكتب' : 'Open separate desktop control panel'}
-          aria-label={isArabic ? 'لوحة تحكم سطح المكتب' : 'Desktop Control Center'}
-        >
-          <Monitor className="w-3.5 h-3.5" />
-          <span className="hidden xl:inline">{isArabic ? 'لوحة التحكم' : 'Control Center'}</span>
-        </button>
 
         {/* Language switch */}
         <button
