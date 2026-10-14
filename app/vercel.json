@@ -4,23 +4,14 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index?__path=:path*"
+    }
+  ],
   "functions": {
-    "api/[...path].js": {
-      "maxDuration": 60
-    },
-    "api/albumaty/stream.js": {
-      "maxDuration": 60
-    },
-    "api/albumaty/download.js": {
-      "maxDuration": 60
-    },
-    "api/online/stream.js": {
-      "maxDuration": 60
-    },
-    "api/online/download.js": {
-      "maxDuration": 60
-    },
-    "api/local-music/generate.js": {
+    "api/index.js": {
       "maxDuration": 60
     }
   }
