@@ -12,7 +12,27 @@ const DIST_DIR = fs.existsSync(path.join(APP_DIR, 'dist'))
   ? path.join(APP_DIR, 'dist')
   : APP_DIR;
 
-const PORT = Number(process.argv[2] || process.env.PORT || 3000);
+function resolveServerPort() {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if ((arg === '--port' || arg === '-p') && args[i + 1] && /^\d+$/.test(args[i + 1])) {
+      return Number(args[i + 1]);
+    }
+    if (arg.startsWith('--port=')) {
+      const val = Number(arg.slice('--port='.length));
+      if (Number.isInteger(val) && val > 0 && val <= 65535) return val;
+    }
+    if (/^\d+$/.test(arg)) {
+      const val = Number(arg);
+      if (Number.isInteger(val) && val > 0 && val <= 65535) return val;
+    }
+  }
+  const envPort = Number(process.env.PORT);
+  return Number.isInteger(envPort) && envPort > 0 && envPort <= 65535 ? envPort : 3000;
+}
+
+const PORT = resolveServerPort();
 const ALBUMATY_BASE = 'https://www.albumaty.com';
 const UPDATE_REPOSITORY = 'mahmoudhindam9-stack/DJ-PC-1';
 const REQUEST_TIMEOUT_MS = 15000;

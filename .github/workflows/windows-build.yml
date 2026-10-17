@@ -29,8 +29,33 @@ jobs:
       - name: Verify package root
         shell: powershell
         run: |
-          $allowed = @('setup.bat', 'uninstall.bat', 'package.json', 'metadata.json')
-          $unexpected = Get-ChildItem -Path . -File | Where-Object { $_.Name -notin $allowed }
+          $required = @('setup.bat', 'uninstall.bat', 'package.json', 'metadata.json')
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) {
+              Write-Error "Missing required root file: $file"
+              exit 1
+            }
+          }
+          $allowed = @(
+            'setup.bat',
+            'uninstall.bat',
+            'package.json',
+            'metadata.json',
+            'vercel.json',
+            'bun.lock',
+            'bun.lockb',
+            'package-lock.json',
+            '.gitignore',
+            '.gitattributes',
+            'README.md',
+            'LICENSE',
+            'tsconfig.json'
+          )
+          $unexpected = Get-ChildItem -Path . -File | Where-Object {
+            $_.Name -notin $allowed -and
+            $_.Name -notmatch '^\.(git|env)' -and
+            $_.Extension -notin @('.md', '.txt', '.lock', '.json')
+          }
           if ($unexpected) {
             $unexpected | ForEach-Object { Write-Error "Unexpected root file: $($_.Name)" }
             exit 1

@@ -7,8 +7,8 @@
     "app"
   ],
   "scripts": {
-    "dev": "npm --prefix app run dev",
-    "start": "npm --prefix app run dev",
+    "dev": "node app/scripts/dev.js",
+    "start": "node app/scripts/dev.js",
     "build": "npm run build --prefix app && node -e \"require('fs').cpSync('app/dist', 'dist', {recursive:true})\"",
     "preview": "npm --prefix app run preview",
     "lint": "npm --prefix app run lint"
