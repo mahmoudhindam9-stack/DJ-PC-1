@@ -21,7 +21,7 @@ import {
   onlineMusicService,
 } from '../../services/OnlineMusicService';
 import { AudioItem, AudiusTrack, Playlist, ThemeColors } from '../../types';
-import { downloadOnlineItem } from '../../services/OnlineMusicService';
+import { downloadOnlineItem, downloadOnlineItemAsync } from '../../services/OnlineMusicService';
 
 interface OnlineMusicScreenProps {
   themeColors: ThemeColors;
@@ -272,16 +272,52 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     });
   };
 
-  const downloadAlbumaty = (link: AlbumatyLink) => {
+  const downloadAlbumaty = async (link: AlbumatyLink) => {
     if (!isSong(link.url)) { void openAlbumatyLink(link); return; }
-    const item: AudioItem = {
-      id: link.url, title: link.title, artist: 'Albumaty', album: 'Albumaty Online', duration: 0,
-      uri: onlineMusicService.getAlbumatyStreamEndpoint(link.url), addedDate: Date.now(),
-      onlineSource: 'ALBUMATY', sourceUrl: link.url,
-      downloadUri: onlineMusicService.getAlbumatyDownloadEndpoint(link.url),
-    };
-    if (downloadOnlineItem(item)) setMessage(isArabic ? 'بدأ تنزيل الأغنية...' : 'Song download started...');
-    else setErrorMessage(isArabic ? 'تعذر تجهيز رابط التنزيل.' : 'Could not prepare the download.');
+    setMessage(isArabic ? `جاري تجهيز وتنزيل: ${link.title}…` : `Preparing download for: ${link.title}…`);
+    setErrorMessage(null);
+    try {
+      let resolvedItem: AudioItem;
+      try {
+        const resolved = await onlineMusicService.resolveAlbumatySong(link.url);
+        resolvedItem = onlineMusicService.convertResolvedToAudioItem(resolved, link.url);
+      } catch {
+        // Fallback to endpoint directly if metadata parsing has hiccups
+        resolvedItem = {
+          id: link.url,
+          title: link.title,
+          artist: 'Albumaty',
+          album: 'Albumaty Online',
+          duration: 0,
+          uri: onlineMusicService.getAlbumatyStreamEndpoint(link.url),
+          addedDate: Date.now(),
+          onlineSource: 'ALBUMATY',
+          sourceUrl: link.url,
+          downloadUri: onlineMusicService.getAlbumatyDownloadEndpoint(link.url),
+        };
+      }
+      await downloadOnlineItemAsync(resolvedItem, (msg) => setMessage(isArabic ? `جاري التنزيل: ${resolvedItem.title}…` : msg));
+      setMessage(isArabic ? `تم تنزيل "${resolvedItem.title}" بنجاح!` : `Successfully downloaded "${resolvedItem.title}"!`);
+    } catch (error) {
+      // If async blob download fails, fallback to direct browser anchor trigger
+      const fallbackItem: AudioItem = {
+        id: link.url,
+        title: link.title,
+        artist: 'Albumaty',
+        album: 'Albumaty Online',
+        duration: 0,
+        uri: onlineMusicService.getAlbumatyStreamEndpoint(link.url),
+        addedDate: Date.now(),
+        onlineSource: 'ALBUMATY',
+        sourceUrl: link.url,
+        downloadUri: onlineMusicService.getAlbumatyDownloadEndpoint(link.url),
+      };
+      if (downloadOnlineItem(fallbackItem)) {
+        setMessage(isArabic ? 'بدأ تنزيل الأغنية عبر المتصفح…' : 'Download initiated via browser…');
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر تنزيل الأغنية.' : 'Could not download track.'));
+      }
+    }
   };
 
   const addAlbumatyToPlaylist = (link: AlbumatyLink) => {
@@ -331,10 +367,20 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     }
   };
 
-  const downloadAudius = (track: AudiusTrack) => {
-    if (downloadOnlineItem(onlineMusicService.convertAudiusToAudioItem(track))) {
-      setMessage(isArabic ? 'بدأ تنزيل الأغنية...' : 'Song download started...');
-    } else setErrorMessage(isArabic ? 'تعذر تجهيز رابط التنزيل.' : 'Could not prepare the download.');
+  const downloadAudius = async (track: AudiusTrack) => {
+    setMessage(isArabic ? `جاري تنزيل: ${track.title}…` : `Downloading: ${track.title}…`);
+    setErrorMessage(null);
+    const item = onlineMusicService.convertAudiusToAudioItem(track);
+    try {
+      await downloadOnlineItemAsync(item, (msg) => setMessage(isArabic ? `جاري تنزيل: ${track.title}…` : msg));
+      setMessage(isArabic ? `تم تنزيل "${track.title}" بنجاح!` : `Successfully downloaded "${track.title}"!`);
+    } catch (error) {
+      if (downloadOnlineItem(item)) {
+        setMessage(isArabic ? 'بدأ تنزيل الأغنية عبر المتصفح…' : 'Download initiated via browser…');
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر تنزيل الأغنية.' : 'Could not download track.'));
+      }
+    }
   };
 
   const playAudius = (track: AudiusTrack) => {

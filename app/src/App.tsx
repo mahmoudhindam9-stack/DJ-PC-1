@@ -511,34 +511,28 @@ export const App: React.FC = () => {
   };
 
   const handleDownloadOnlineTracks = async (tracks: AudioItem[]) => {
-    const downloadableTracks = tracks.filter((track) => Boolean(getOnlineDownloadEndpoint(track)));
+    // Only process online tracks
+    const downloadableTracks = tracks.filter((track) => Boolean(track.onlineSource || getOnlineDownloadEndpoint(track)));
     if (!downloadableTracks.length || isDownloadingOnlineQueue) return;
 
     setIsDownloadingOnlineQueue(true);
-    setDownloadProgress(isArabic ? 'جاري تجهيز التنزيل…' : 'Preparing downloads…');
+    setDownloadProgress(isArabic ? 'جاري تجهيز تنزيل أغاني الأونلاين…' : 'Preparing online downloads…');
     try {
       let folderPath: string | null = null;
       let browserFolder: BrowserDownloadDirectory | null = null;
       if (isTauri()) {
-        const selected = await openDialog({
-          directory: true,
-          multiple: false,
-          title: isArabic ? 'اختر مجلد حفظ الأغاني' : 'Choose a folder for downloaded songs',
-        });
-        if (typeof selected !== 'string' || !selected) {
-          setDownloadProgress(null);
-          return;
+        try {
+          const selected = await openDialog({
+            directory: true,
+            multiple: false,
+            title: isArabic ? 'اختر مجلد حفظ الأغاني' : 'Choose a folder for downloaded songs',
+          });
+          if (typeof selected === 'string' && selected) {
+            folderPath = selected;
+          }
+        } catch {
+          // Continue to fallback if dialog fails
         }
-        folderPath = selected;
-      } else {
-        const pickerWindow = window as unknown as { showDirectoryPicker?: () => Promise<BrowserDownloadDirectory> };
-        if (!pickerWindow.showDirectoryPicker) {
-          setDownloadProgress(isArabic
-            ? 'اختيار مجلد التنزيل يحتاج إلى نسخة سطح المكتب أو متصفح يدعم اختيار المجلدات.'
-            : 'Folder selection requires the desktop app or a browser that supports folder picking.');
-          return;
-        }
-        browserFolder = await pickerWindow.showDirectoryPicker();
       }
 
       let completed = 0;
@@ -549,8 +543,8 @@ export const App: React.FC = () => {
         const endpoint = getOnlineDownloadEndpoint(track);
         if (!endpoint) continue;
         setDownloadProgress(isArabic
-          ? `جاري تنزيل ${index + 1}/${downloadableTracks.length}: ${track.title}`
-          : `Downloading ${index + 1}/${downloadableTracks.length}: ${track.title}`);
+          ? `جاري تنزيل (${index + 1}/${downloadableTracks.length}): ${track.title}…`
+          : `Downloading (${index + 1}/${downloadableTracks.length}): ${track.title}…`);
         try {
           const response = await fetch(endpoint, { headers: { Accept: 'audio/*, application/octet-stream, */*' } });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -576,17 +570,21 @@ export const App: React.FC = () => {
               target = await join(folderPath, name);
             }
             await writeFile(target, bytes);
-          } else if (browserFolder) {
-            while (true) {
-              try { await browserFolder.getFileHandle(name); name = `${stem} (${suffix++})${extension}`; }
-              catch { break; }
-            }
-            const file = await browserFolder.getFileHandle(name, { create: true });
-            const writable = await file.createWritable();
-            await writable.write(bytes);
-            await writable.close();
           } else {
-            throw new Error('No destination folder was selected.');
+            // Direct browser download via Blob URL
+            const blob = new Blob([bytes], { type: contentType.startsWith('audio/') ? contentType : 'audio/mpeg' });
+            const blobUrl = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = blobUrl;
+            anchor.download = name;
+            anchor.style.display = 'none';
+            document.body.appendChild(anchor);
+            anchor.click();
+            setTimeout(() => {
+              anchor.remove();
+              URL.revokeObjectURL(blobUrl);
+            }, 15000);
+            await new Promise((resolve) => setTimeout(resolve, 800));
           }
           usedNames.add(name);
           completed += 1;
@@ -595,13 +593,12 @@ export const App: React.FC = () => {
         }
       }
       setDownloadProgress(failures.length === 0
-        ? (isArabic ? `اكتمل التنزيل بنجاح: ${completed} أغنية.` : `Download complete: ${completed} song(s) saved.`)
+        ? (isArabic ? `اكتمل تنزيل أغاني الأونلاين بنجاح: ${completed} أغنية.` : `Download complete: ${completed} online song(s) saved.`)
         : (isArabic
           ? `انتهى التنزيل: نجح ${completed} وفشل ${failures.length}. أول خطأ: ${failures[0]}`
           : `Download finished: ${completed} succeeded, ${failures.length} failed. First error: ${failures[0]}`));
     } catch (error) {
-      const cancelled = error instanceof DOMException && error.name === 'AbortError';
-      setDownloadProgress(cancelled ? null : (error instanceof Error ? error.message : (isArabic ? 'فشل تنزيل الأغاني.' : 'Could not download the songs.')));
+      setDownloadProgress(error instanceof Error ? error.message : (isArabic ? 'فشل تنزيل الأغاني.' : 'Could not download the songs.'));
     } finally {
       setIsDownloadingOnlineQueue(false);
     }

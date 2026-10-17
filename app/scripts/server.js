@@ -83,15 +83,15 @@ function isAllowedAlbumatyUrl(raw) {
 
 function isAllowedAudioUrl(raw) {
   const parsed = parseUrl(raw);
-  if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password) return false;
-  // Albumaty MP3 files may be hosted on a separate public CDN.
-  // Reject local names, IP literals, and unusual ports to avoid a general-purpose proxy.
-  const host = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+  if (!parsed || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password) return false;
+  // Albumaty MP3 files may be hosted on a separate public CDN or media server.
+  // Reject local names, internal/private IP ranges, and unusual ports to avoid a general-purpose proxy.
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
   if (!host || host === 'localhost' || host.endsWith('.localhost') ||
       host.endsWith('.local') || host.endsWith('.internal') ||
       host.endsWith('.lan') || host.endsWith('.home.arpa')) return false;
-  if (!host.includes('.') || /^\\d+(?:\\.\\d+){3}$/.test(host) || host.includes(':')) return false;
-  if (parsed.port && parsed.port !== '443') return false;
+  if (host === '127.0.0.1' || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return false;
+  if (parsed.port && parsed.port !== '443' && parsed.port !== '80') return false;
   return true;
 }
 
@@ -99,7 +99,7 @@ function isAllowedAudiusUrl(raw) {
   const parsed = parseUrl(raw);
   if (!parsed || !/^https?:$/.test(parsed.protocol)) return false;
   const host = parsed.hostname.toLowerCase();
-  return host === 'audius.co' || host.endsWith('.audius.co');
+  return host === 'audius.co' || host.endsWith('.audius.co') || host.includes('audius');
 }
 
 function pathParts(url) {
@@ -214,7 +214,8 @@ function parseHome(html) {
 }
 
 function extractDownloadPage(html) {
-  const match = /<a[^>]+href=["']([^"']*\/download\/[^"']+)["'][^>]*>/i.exec(html);
+  const match = /<a[^>]+href=["']([^"']*(?:\/download\/|download\.php|\/d\/|\/dl\/)[^"']+)["'][^>]*>/i.exec(html) ||
+                /<a[^>]+href=["']([^"']+)["'][^>]*>[^<]*(?:تحميل|تنزيل|download)[^<]*<\/a>/is.exec(html);
   return match ? normalizeAlbumatyUrl(match[1]) : null;
 }
 
@@ -224,15 +225,22 @@ function extractAudioUrl(html) {
   if (ogAudio) return normalizeAlbumatyUrl(ogAudio[1]);
 
   const source = /<(?:audio|source)[^>]+src=["']([^"']+)["']/i.exec(html);
-  if (source && /\.mp3/i.test(source[1])) return normalizeAlbumatyUrl(source[1]);
+  if (source && /\.(?:mp3|m4a|wav|ogg|aac)(?:\?[^"']*)?$/i.test(source[1])) return normalizeAlbumatyUrl(source[1]);
 
-  const direct = /https?:\/\/[^"'<>\s]+\.mp3(?:\?[^"'<>\s]*)?/i.exec(html);
+  const dataSrc = /<(?:audio|source)[^>]+data-(?:src|url|audio)=["']([^"']+)["']/i.exec(html);
+  if (dataSrc) return normalizeAlbumatyUrl(dataSrc[1]);
+
+  const scriptAudio = /(?:file|mp3|src|url|audio|source|stream)\s*[:=]\s*["']([^"']+\.(?:mp3|m4a|wav|ogg)(?:\?[^"']*)?)["']/i.exec(html);
+  if (scriptAudio) return normalizeAlbumatyUrl(scriptAudio[1]);
+
+  const direct = /https?:\/\/[^"'<>\s]+\.(?:mp3|m4a|wav|ogg)(?:\?[^"'<>\s]*)?/i.exec(html);
   if (direct) return normalizeAlbumatyUrl(direct[0]);
 
-  const download = /<a[^>]+href=["']([^"']+)["'][^>]*>[^<]*(?:تحميل|download)[^<]*<\/a>/is.exec(html);
+  const download = /<a[^>]+href=["']([^"']*(?:\.mp3|\.m4a|\.wav)[^"']*)["'][^>]*>/i.exec(html) ||
+                   /<a[^>]+href=["']([^"']+)["'][^>]*>[^<]*(?:تحميل|download|تنزيل)[^<]*<\/a>/is.exec(html);
   if (download) {
     const url = normalizeAlbumatyUrl(download[1]);
-    if (/\.mp3/i.test(url)) return url;
+    if (/\.(?:mp3|m4a|wav|ogg)/i.test(url)) return url;
   }
 
   return null;
@@ -439,7 +447,7 @@ async function proxyAudioStream(req, res, url, downloadName) {
   });
 
   // Validate the final URL too, because fetch follows redirects by default.
-  if (!isAllowedAudioUrl(upstream.url)) {
+  if (!isAllowedAudioUrl(upstream.url) && !isAllowedAudiusUrl(upstream.url)) {
     await upstream.body?.cancel().catch(() => {});
     throw new Error('Audio host redirected to an unsupported destination.');
   }
@@ -989,15 +997,28 @@ async function handleApi(req, res) {
 
     if (requestUrl.pathname === '/api/albumaty/stream' && req.method === 'GET') {
       const target = requestUrl.searchParams.get('url') || '';
-      const resolved = await resolveAlbumatySong(normalizeAlbumatyUrl(target));
-      await proxyAudioStream(req, res, resolved.streamUrl);
+      const normalized = normalizeAlbumatyUrl(target);
+      if (/\.(?:mp3|m4a|wav|ogg)(?:\?|$)/i.test(normalized) || isAllowedAudioUrl(normalized)) {
+        await proxyAudioStream(req, res, normalized);
+      } else {
+        const resolved = await resolveAlbumatySong(normalized);
+        await proxyAudioStream(req, res, resolved.streamUrl);
+      }
       return true;
     }
 
     if (requestUrl.pathname === '/api/albumaty/download' && req.method === 'GET') {
       const target = requestUrl.searchParams.get('url') || '';
-      const resolved = await resolveAlbumatySong(normalizeAlbumatyUrl(target));
-      await proxyAudioStream(req, res, resolved.downloadUrl, (resolved.title || 'song') + '.mp3');
+      const normalized = normalizeAlbumatyUrl(target);
+      const requestedName = requestUrl.searchParams.get('name') || '';
+      if (/\.(?:mp3|m4a|wav|ogg)(?:\?|$)/i.test(normalized) || isAllowedAudioUrl(normalized)) {
+        const safeName = requestedName || path.basename(new URL(normalized).pathname) || 'song.mp3';
+        await proxyAudioStream(req, res, normalized, safeName.toLowerCase().endsWith('.mp3') ? safeName : safeName + '.mp3');
+      } else {
+        const resolved = await resolveAlbumatySong(normalized);
+        const title = requestedName || resolved.title || 'song';
+        await proxyAudioStream(req, res, resolved.downloadUrl, title.toLowerCase().endsWith('.mp3') ? title : title + '.mp3');
+      }
       return true;
     }
 

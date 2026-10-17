@@ -11,23 +11,27 @@ export type DJEffectType =
   | 'fx_bitcrush'
   | 'fx_distortion'
   | 'fx_compressor'
-  | 'voice_woman'
-  | 'voice_kid'
   | 'voice_chipmunk'
+  | 'voice_robot'
   | 'voice_monster'
   | 'voice_demon'
-  | 'voice_giant';
+  | 'voice_giant'
+  | 'voice_kid'
+  | 'voice_woman'
+  | 'voice_telephone'
+  | 'voice_radio'
+  | 'voice_alien';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
 
 const VOICE_RATE: Partial<Record<DJEffectType, number>> = {
-  voice_woman: 1.26,
-  voice_kid: 1.49,
-  voice_chipmunk: 1.95,
-  voice_monster: 0.75,
-  voice_demon: 0.63,
-  voice_giant: 0.5,
+  voice_woman: 1.22,
+  voice_kid: 1.42,
+  voice_chipmunk: 1.75,
+  voice_monster: 0.72,
+  voice_demon: 0.62,
+  voice_giant: 0.52,
 };
 
 export class DJDeckEngine {
@@ -41,6 +45,10 @@ export class DJDeckEngine {
   private globalEqConnection: GlobalEqualizerConnection | null = null;
   private crossfadeGain: GainNode | null = null;
   private filterNode: BiquadFilterNode | null = null;
+  private voiceFormantFilter: BiquadFilterNode | null = null;
+  private robotOscillator: OscillatorNode | null = null;
+  private robotGain: GainNode | null = null;
+  private robotModulatorGain: GainNode | null = null;
   private delayNode: DelayNode | null = null;
   private delayFeedback: GainNode | null = null;
   private delayWetGain: GainNode | null = null;
@@ -93,17 +101,10 @@ export class DJDeckEngine {
     this.audioElement.crossOrigin = 'anonymous';
     this.audioElement.volume = 1;
 
-    const mediaElement = this.audioElement as HTMLAudioElement & {
-      preservesPitch?: boolean;
-      webkitPreservesPitch?: boolean;
-      mozPreservesPitch?: boolean;
-    };
-    // DJ tempo must alter actual speed and pitch rather than being hidden by pitch preservation.
-    mediaElement.preservesPitch = false;
-    mediaElement.webkitPreservesPitch = false;
-    mediaElement.mozPreservesPitch = false;
+    this.enforcePitchPreservation();
 
     this.audioElement.addEventListener('play', () => {
+      this.enforcePitchPreservation();
       this.isPlaying = true;
       this.startBpmDetection();
       this.notify();
@@ -111,6 +112,16 @@ export class DJDeckEngine {
     this.audioElement.addEventListener('pause', () => {
       this.isPlaying = false;
       this.stopBpmDetection();
+      this.notify();
+    });
+    this.audioElement.addEventListener('loadedmetadata', () => {
+      this.enforcePitchPreservation();
+      this.applyPitchAndEffect();
+      this.notify();
+    });
+    this.audioElement.addEventListener('canplay', () => {
+      this.enforcePitchPreservation();
+      this.applyPitchAndEffect();
       this.notify();
     });
     this.audioElement.addEventListener('ended', () => {
@@ -124,7 +135,21 @@ export class DJDeckEngine {
     });
     this.audioElement.addEventListener('timeupdate', () => this.notify());
     this.audioElement.addEventListener('durationchange', () => this.notify());
-    this.audioElement.addEventListener('ratechange', () => this.notify());
+    this.audioElement.addEventListener('ratechange', () => {
+      this.enforcePitchPreservation();
+      this.notify();
+    });
+  }
+
+  public enforcePitchPreservation() {
+    const media = this.audioElement as HTMLAudioElement & {
+      preservesPitch?: boolean;
+      webkitPreservesPitch?: boolean;
+      mozPreservesPitch?: boolean;
+    };
+    media.preservesPitch = false;
+    media.webkitPreservesPitch = false;
+    media.mozPreservesPitch = false;
   }
 
   private ensureContext(): AudioContext {
@@ -146,10 +171,27 @@ export class DJDeckEngine {
   private setupNodes(ctx: AudioContext) {
     this.sourceNode = ctx.createMediaElementSource(this.audioElement);
 
+    // Robot & alien amplitude modulator
+    this.robotOscillator = ctx.createOscillator();
+    this.robotOscillator.type = 'sine';
+    this.robotOscillator.frequency.value = 140;
+    this.robotGain = ctx.createGain();
+    this.robotGain.gain.value = 0;
+    this.robotModulatorGain = ctx.createGain();
+    this.robotModulatorGain.gain.value = 1;
+    this.robotOscillator.connect(this.robotGain);
+    this.robotGain.connect(this.robotModulatorGain.gain);
+    this.robotOscillator.start();
+
     this.filterNode = ctx.createBiquadFilter();
     this.filterNode.type = 'allpass';
     this.filterNode.frequency.value = 1000;
     this.filterNode.Q.value = 0.0001;
+
+    this.voiceFormantFilter = ctx.createBiquadFilter();
+    this.voiceFormantFilter.type = 'allpass';
+    this.voiceFormantFilter.frequency.value = 1000;
+    this.voiceFormantFilter.Q.value = 1;
 
     this.waveshaperNode = ctx.createWaveShaper();
     this.waveshaperNode.curve = this.makeDistortionCurve(0);
@@ -235,9 +277,11 @@ export class DJDeckEngine {
     this.reverbWetGain = ctx.createGain();
     this.reverbWetGain.gain.value = 0;
 
-    // Main dry path.
-    this.sourceNode.connect(this.filterNode);
-    this.filterNode.connect(this.waveshaperNode);
+    // Main dry path through voice/fx processors
+    this.sourceNode.connect(this.robotModulatorGain);
+    this.robotModulatorGain.connect(this.filterNode);
+    this.filterNode.connect(this.voiceFormantFilter);
+    this.voiceFormantFilter.connect(this.waveshaperNode);
     this.waveshaperNode.connect(this.compressorNode);
     this.compressorNode.connect(this.deckGain);
     this.compressorNode.connect(this.fxSendGain);
@@ -283,6 +327,7 @@ export class DJDeckEngine {
     this.currentTrack = track;
     this.audioElement.src = track.uri;
     this.audioElement.load();
+    this.enforcePitchPreservation();
     this.seekTo(0);
     this.applyPitchAndEffect();
     this.notify();
@@ -297,6 +342,8 @@ export class DJDeckEngine {
         console.warn('Could not resume DJ deck audio context:', error);
       }
     }
+    this.enforcePitchPreservation();
+    this.applyPitchAndEffect();
     try {
       await this.audioElement.play();
     } catch (error) {
@@ -550,27 +597,49 @@ export class DJDeckEngine {
   }
 
   setEffect(effect: DJEffectType) {
+    this.ensureContext();
     this.activeEffect = effect;
     this.applyPitchAndEffect();
     this.notify();
   }
 
   setFxAmount(amount: number) {
+    this.ensureContext();
     this.fxAmount = clamp(amount, 0, 1);
     this.applyPitchAndEffect();
     this.notify();
   }
 
   private applyPitchAndEffect() {
+    this.enforcePitchPreservation();
     const amount = clamp(this.fxAmount, 0, 1);
     const voiceRate = VOICE_RATE[this.activeEffect];
     const effectiveRate = this.pitch * (voiceRate ? 1 + (voiceRate - 1) * amount : 1);
-    if (!this.scratchActive) this.audioElement.playbackRate = clamp(effectiveRate, 0.25, 2.5);
+    if (!this.scratchActive) {
+      this.audioElement.playbackRate = clamp(effectiveRate, 0.25, 2.5);
+    }
 
     const ctx = this.ctx;
     if (!ctx) return;
     const now = ctx.currentTime;
 
+    // 1. Robot & Alien ring modulators
+    if (this.robotGain && this.robotModulatorGain && this.robotOscillator) {
+      if (this.activeEffect === 'voice_robot') {
+        this.robotOscillator.frequency.setTargetAtTime(140, now, 0.03);
+        this.robotGain.gain.setTargetAtTime(amount * 0.85, now, 0.03);
+        this.robotModulatorGain.gain.setTargetAtTime(1 - amount * 0.45, now, 0.03);
+      } else if (this.activeEffect === 'voice_alien') {
+        this.robotOscillator.frequency.setTargetAtTime(320, now, 0.03);
+        this.robotGain.gain.setTargetAtTime(amount * 0.78, now, 0.03);
+        this.robotModulatorGain.gain.setTargetAtTime(1 - amount * 0.35, now, 0.03);
+      } else {
+        this.robotGain.gain.setTargetAtTime(0, now, 0.03);
+        this.robotModulatorGain.gain.setTargetAtTime(1, now, 0.03);
+      }
+    }
+
+    // 2. Main EQ / Filter
     if (this.filterNode) {
       this.filterNode.type = 'allpass';
       this.filterNode.frequency.setTargetAtTime(1000, now, 0.03);
@@ -579,93 +648,206 @@ export class DJDeckEngine {
 
       switch (this.activeEffect) {
         case 'fx_filter':
-          this.filterNode.type = 'lowpass';
-          this.filterNode.frequency.setTargetAtTime(250 + Math.pow(amount, 2) * 18500, now, 0.03);
-          this.filterNode.Q.setTargetAtTime(0.7 + amount * 8, now, 0.03);
+          if (amount < 0.48) {
+            this.filterNode.type = 'lowpass';
+            const norm = amount / 0.48;
+            this.filterNode.frequency.setTargetAtTime(180 + Math.pow(norm, 2.4) * 19000, now, 0.03);
+            this.filterNode.Q.setTargetAtTime(1.2 + (1 - norm) * 4, now, 0.03);
+          } else if (amount > 0.52) {
+            this.filterNode.type = 'highpass';
+            const norm = (amount - 0.52) / 0.48;
+            this.filterNode.frequency.setTargetAtTime(20 + Math.pow(norm, 2.2) * 6500, now, 0.03);
+            this.filterNode.Q.setTargetAtTime(1.2 + norm * 4.5, now, 0.03);
+          } else {
+            this.filterNode.type = 'allpass';
+            this.filterNode.frequency.setTargetAtTime(1000, now, 0.03);
+            this.filterNode.Q.setTargetAtTime(0.0001, now, 0.03);
+          }
           break;
         case 'fx_flanger':
           this.filterNode.type = 'allpass';
-          this.filterNode.frequency.setTargetAtTime(600 + amount * 5000, now, 0.03);
-          this.filterNode.Q.setTargetAtTime(0.5 + amount * 5, now, 0.03);
+          this.filterNode.frequency.setTargetAtTime(800 + amount * 3500, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(0.5 + amount * 3, now, 0.03);
           break;
         case 'fx_phaser':
           this.filterNode.type = 'allpass';
-          this.filterNode.frequency.setTargetAtTime(350 + amount * 4500, now, 0.03);
-          this.filterNode.Q.setTargetAtTime(0.5 + amount * 8, now, 0.03);
+          this.filterNode.frequency.setTargetAtTime(450 + amount * 4000, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(0.7 + amount * 6, now, 0.03);
           break;
         case 'fx_distortion':
           this.filterNode.type = 'peaking';
-          this.filterNode.frequency.setTargetAtTime(1000, now, 0.03);
-          this.filterNode.Q.setTargetAtTime(1, now, 0.03);
-          this.filterNode.gain.setTargetAtTime(amount * 7, now, 0.03);
+          this.filterNode.frequency.setTargetAtTime(1200, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.2, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(amount * 9, now, 0.03);
           break;
         case 'fx_bitcrush':
           this.filterNode.type = 'lowpass';
-          this.filterNode.frequency.setTargetAtTime(900 + (1 - amount) * 6500, now, 0.03);
-          this.filterNode.Q.setTargetAtTime(0.8, now, 0.03);
+          this.filterNode.frequency.setTargetAtTime(700 + (1 - amount) * 5500, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.2, now, 0.03);
+          break;
+        case 'voice_robot':
+          this.filterNode.type = 'peaking';
+          this.filterNode.frequency.setTargetAtTime(1500, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(2.5, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(amount * 8, now, 0.03);
+          break;
+        case 'voice_alien':
+          this.filterNode.type = 'peaking';
+          this.filterNode.frequency.setTargetAtTime(2200, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(4.0, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(amount * 9, now, 0.03);
+          break;
+        case 'voice_chipmunk':
+          this.filterNode.type = 'highpass';
+          this.filterNode.frequency.setTargetAtTime(360 + amount * 240, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.5, now, 0.03);
           break;
         case 'voice_monster':
+          this.filterNode.type = 'lowshelf';
+          this.filterNode.frequency.setTargetAtTime(140, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(8 + amount * 12, now, 0.03);
+          break;
         case 'voice_demon':
           this.filterNode.type = 'lowshelf';
-          this.filterNode.frequency.setTargetAtTime(220, now, 0.03);
-          this.filterNode.gain.setTargetAtTime(4 + amount * 12, now, 0.03);
+          this.filterNode.frequency.setTargetAtTime(110, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(10 + amount * 14, now, 0.03);
           break;
         case 'voice_giant':
           this.filterNode.type = 'lowshelf';
-          this.filterNode.frequency.setTargetAtTime(180, now, 0.03);
-          this.filterNode.gain.setTargetAtTime(2 + amount * 9, now, 0.03);
+          this.filterNode.frequency.setTargetAtTime(75, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(12 + amount * 15, now, 0.03);
+          break;
+        case 'voice_kid':
+          this.filterNode.type = 'peaking';
+          this.filterNode.frequency.setTargetAtTime(1800, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.8, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(5 + amount * 8, now, 0.03);
           break;
         case 'voice_woman':
-        case 'voice_kid':
-        case 'voice_chipmunk':
-          this.filterNode.type = 'highshelf';
+          this.filterNode.type = 'peaking';
+          this.filterNode.frequency.setTargetAtTime(2400, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.4, now, 0.03);
+          this.filterNode.gain.setTargetAtTime(4 + amount * 7, now, 0.03);
+          break;
+        case 'voice_telephone':
+          this.filterNode.type = 'highpass';
+          this.filterNode.frequency.setTargetAtTime(480, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.2, now, 0.03);
+          break;
+        case 'voice_radio':
+          this.filterNode.type = 'bandpass';
           this.filterNode.frequency.setTargetAtTime(1800, now, 0.03);
-          this.filterNode.gain.setTargetAtTime(2 + amount * 6, now, 0.03);
+          this.filterNode.Q.setTargetAtTime(1.6, now, 0.03);
           break;
         default:
           break;
       }
     }
 
+    // 3. Voice Formant Shaping Filter
+    if (this.voiceFormantFilter) {
+      this.voiceFormantFilter.type = 'allpass';
+      this.voiceFormantFilter.frequency.setTargetAtTime(1000, now, 0.03);
+      this.voiceFormantFilter.gain.setTargetAtTime(0, now, 0.03);
+
+      switch (this.activeEffect) {
+        case 'voice_chipmunk':
+          this.voiceFormantFilter.type = 'peaking';
+          this.voiceFormantFilter.frequency.setTargetAtTime(2800, now, 0.03);
+          this.voiceFormantFilter.Q.setTargetAtTime(2.2, now, 0.03);
+          this.voiceFormantFilter.gain.setTargetAtTime(5 + amount * 9, now, 0.03);
+          break;
+        case 'voice_robot':
+          this.voiceFormantFilter.type = 'highpass';
+          this.voiceFormantFilter.frequency.setTargetAtTime(260, now, 0.03);
+          break;
+        case 'voice_monster':
+          this.voiceFormantFilter.type = 'lowpass';
+          this.voiceFormantFilter.frequency.setTargetAtTime(4500, now, 0.03);
+          break;
+        case 'voice_giant':
+          this.voiceFormantFilter.type = 'lowpass';
+          this.voiceFormantFilter.frequency.setTargetAtTime(3200, now, 0.03);
+          break;
+        case 'voice_kid':
+          this.voiceFormantFilter.type = 'highpass';
+          this.voiceFormantFilter.frequency.setTargetAtTime(220, now, 0.03);
+          break;
+        case 'voice_woman':
+          this.voiceFormantFilter.type = 'highshelf';
+          this.voiceFormantFilter.frequency.setTargetAtTime(5000, now, 0.03);
+          this.voiceFormantFilter.gain.setTargetAtTime(2 + amount * 5, now, 0.03);
+          break;
+        case 'voice_telephone':
+          this.voiceFormantFilter.type = 'lowpass';
+          this.voiceFormantFilter.frequency.setTargetAtTime(2800, now, 0.03);
+          this.voiceFormantFilter.Q.setTargetAtTime(1.2, now, 0.03);
+          break;
+        default:
+          break;
+      }
+    }
+
+    // 4. WaveShaper distortion / saturation
     if (this.waveshaperNode) {
       let distortion = 0;
-      if (this.activeEffect === 'fx_distortion') distortion = amount * 500;
-      else if (this.activeEffect === 'fx_bitcrush') distortion = 40 + amount * 230;
-      else if (this.activeEffect === 'voice_monster' || this.activeEffect === 'voice_demon') distortion = amount * 210;
-      else if (this.activeEffect === 'voice_giant') distortion = amount * 100;
+      if (this.activeEffect === 'fx_distortion') distortion = 20 + amount * 480;
+      else if (this.activeEffect === 'fx_bitcrush') distortion = 60 + amount * 300;
+      else if (this.activeEffect === 'voice_monster') distortion = 35 + amount * 120;
+      else if (this.activeEffect === 'voice_demon') distortion = 40 + amount * 160;
+      else if (this.activeEffect === 'voice_giant') distortion = amount * 60;
+      else if (this.activeEffect === 'voice_telephone') distortion = 25 + amount * 35;
+      else if (this.activeEffect === 'voice_radio') distortion = 30 + amount * 40;
       this.waveshaperNode.curve = this.makeDistortionCurve(distortion);
     }
 
     if (this.compressorNode) {
       const active = this.activeEffect === 'fx_compressor';
-      this.compressorNode.threshold.setTargetAtTime(active ? -20 - amount * 35 : -18, now, 0.03);
-      this.compressorNode.knee.setTargetAtTime(active ? 8 : 20, now, 0.03);
-      this.compressorNode.ratio.setTargetAtTime(active ? 3 + amount * 12 : 3, now, 0.03);
-      this.compressorNode.attack.setTargetAtTime(active ? 0.003 : 0.015, now, 0.03);
-      this.compressorNode.release.setTargetAtTime(active ? 0.12 + amount * 0.35 : 0.25, now, 0.03);
+      this.compressorNode.threshold.setTargetAtTime(active ? -24 - amount * 30 : -18, now, 0.03);
+      this.compressorNode.knee.setTargetAtTime(active ? 6 : 20, now, 0.03);
+      this.compressorNode.ratio.setTargetAtTime(active ? 4 + amount * 14 : 3, now, 0.03);
+      this.compressorNode.attack.setTargetAtTime(active ? 0.002 : 0.015, now, 0.03);
+      this.compressorNode.release.setTargetAtTime(active ? 0.08 + amount * 0.3 : 0.25, now, 0.03);
     }
 
     if (this.delayNode && this.delayFeedback && this.delayWetGain && this.delayLfo && this.delayLfoGain) {
       const isDelay = this.activeEffect === 'fx_delay';
       const isFlanger = this.activeEffect === 'fx_flanger';
       const isPhaser = this.activeEffect === 'fx_phaser';
-      const delayBase = isDelay ? 0.16 + amount * 0.38 : isFlanger ? 0.006 : isPhaser ? 0.014 : 0.12;
-      // Keep the wet return clearly audible at normal knob positions.
-      const wet = isDelay ? amount * (0.55 + amount * 0.55)
-        : isFlanger ? amount * 0.75
-        : isPhaser ? amount * 0.62
+      const isDemon = this.activeEffect === 'voice_demon';
+
+      // Always guarantee delayBase > lfoDepth so delayTime NEVER becomes negative
+      const delayBase = isDelay ? 0.16 + amount * 0.42
+        : isFlanger ? 0.015
+        : isPhaser ? 0.020
+        : isDemon ? 0.035
+        : 0.12;
+      const wet = isDelay ? amount * (0.65 + amount * 0.45)
+        : isFlanger ? amount * 0.82
+        : isPhaser ? amount * 0.75
+        : isDemon ? amount * 0.42
         : 0;
-      const feedback = isDelay ? amount * 0.72 : isFlanger ? amount * 0.34 : isPhaser ? amount * 0.22 : 0;
+      const feedback = isDelay ? 0.25 + amount * 0.55
+        : isFlanger ? 0.35 + amount * 0.35
+        : isPhaser ? 0.25 + amount * 0.25
+        : isDemon ? 0.3
+        : 0;
+      const lfoFreq = isFlanger ? 0.2 + amount * 3.2
+        : isPhaser ? 0.15 + amount * 1.5
+        : 0.25;
+      const lfoDepth = isFlanger ? 0.002 + amount * 0.005
+        : isPhaser ? 0.001 + amount * 0.003
+        : 0;
 
       this.delayNode.delayTime.setTargetAtTime(delayBase, now, 0.025);
       this.delayWetGain.gain.setTargetAtTime(wet, now, 0.025);
       this.delayFeedback.gain.setTargetAtTime(feedback, now, 0.025);
-      this.delayLfo.frequency.setTargetAtTime(isFlanger ? 0.15 + amount * 3.5 : isPhaser ? 0.18 + amount * 1.2 : 0.25, now, 0.025);
-      this.delayLfoGain.gain.setTargetAtTime(isFlanger ? 0.001 + amount * 0.006 : isPhaser ? 0.0002 + amount * 0.0015 : 0, now, 0.025);
+      this.delayLfo.frequency.setTargetAtTime(lfoFreq, now, 0.025);
+      this.delayLfoGain.gain.setTargetAtTime(lfoDepth, now, 0.025);
     }
 
     if (this.reverbWetGain) {
-      this.reverbWetGain.gain.setTargetAtTime(this.activeEffect === 'fx_reverb' ? amount * 1.12 : 0, now, 0.025);
+      this.reverbWetGain.gain.setTargetAtTime(this.activeEffect === 'fx_reverb' ? amount * 1.25 : 0, now, 0.025);
     }
   }
 

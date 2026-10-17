@@ -43,7 +43,8 @@ const DJ_MIXER_SCROLL_KEY = 'dj-mixer-scroll-v1';
 const SAVED_DJ_EFFECTS: DJEffectType[] = [
   'none', 'fx_filter', 'fx_delay', 'fx_reverb', 'fx_flanger', 'fx_phaser',
   'fx_bitcrush', 'fx_distortion', 'fx_compressor',
-  'voice_woman', 'voice_kid', 'voice_chipmunk', 'voice_monster', 'voice_demon', 'voice_giant',
+  'voice_chipmunk', 'voice_robot', 'voice_monster', 'voice_demon', 'voice_giant',
+  'voice_kid', 'voice_woman', 'voice_telephone', 'voice_radio', 'voice_alien',
 ];
 
 const clampMixerValue = (value: number, min: number, max: number) =>
@@ -651,21 +652,25 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   };
 
   const effectsList: Array<{ id: DJEffectType; name: string }> = [
-    { id: 'none', name: 'Bypass' },
-    { id: 'fx_filter', name: '🎛️ Filter' },
-    { id: 'fx_delay', name: '🔁 Delay' },
-    { id: 'fx_reverb', name: '🌊 Reverb' },
-    { id: 'fx_flanger', name: '🌀 Flanger' },
-    { id: 'fx_phaser', name: '🌈 Phaser' },
-    { id: 'fx_bitcrush', name: '👾 Bitcrush' },
-    { id: 'fx_distortion', name: '🔥 Distort' },
-    { id: 'fx_compressor', name: '🎚️ Compressor' },
-    { id: 'voice_woman', name: '👩 Woman Voice' },
-    { id: 'voice_kid', name: '👶 Kid Voice' },
-    { id: 'voice_chipmunk', name: '🐿️ Chipmunk' },
-    { id: 'voice_monster', name: '👹 Monster' },
-    { id: 'voice_demon', name: '👻 Dark Demon' },
-    { id: 'voice_giant', name: '🏔️ Giant Bass' },
+    { id: 'none', name: isArabic ? 'بدون مؤثر (Bypass)' : 'Bypass' },
+    { id: 'fx_filter', name: isArabic ? '🎛️ فلتر DJ ثنائي' : '🎛️ Dual Filter' },
+    { id: 'fx_delay', name: isArabic ? '🔁 صدى وتأخير (Echo)' : '🔁 Echo / Delay' },
+    { id: 'fx_reverb', name: isArabic ? '🌊 صدى مكاني (Reverb)' : '🌊 Reverb Hall' },
+    { id: 'fx_flanger', name: isArabic ? '🌀 مؤثر فلانجر (Flanger)' : '🌀 Flanger Jet' },
+    { id: 'fx_phaser', name: isArabic ? '🌈 مؤثر فيزر (Phaser)' : '🌈 Phaser' },
+    { id: 'fx_bitcrush', name: isArabic ? '👾 صوت رقمي (Bitcrush)' : '👾 8-Bit Lo-Fi' },
+    { id: 'fx_distortion', name: isArabic ? '🔥 تضخيم وتشويه (Distort)' : '🔥 Overdrive' },
+    { id: 'fx_compressor', name: isArabic ? '🎚️ كمبرسور (Compressor)' : '🎚️ Compressor' },
+    { id: 'voice_chipmunk', name: isArabic ? '🐿️ صوت السناجب (Chipmunk)' : '🐿️ Chipmunk Voice' },
+    { id: 'voice_robot', name: isArabic ? '🤖 صوت روبوت آلي (Robot)' : '🤖 Robot Voice' },
+    { id: 'voice_monster', name: isArabic ? '👹 صوت وحش عميق (Monster)' : '👹 Monster Voice' },
+    { id: 'voice_demon', name: isArabic ? '👻 صوت مرعب (Demon)' : '👻 Dark Demon' },
+    { id: 'voice_giant', name: isArabic ? '🏔️ صوت عملاق ضخم (Giant)' : '🏔️ Giant Bass' },
+    { id: 'voice_kid', name: isArabic ? '👶 صوت طفل (Kid)' : '👶 Kid Voice' },
+    { id: 'voice_woman', name: isArabic ? '👩 صوت أنثوي (Woman)' : '👩 Woman Voice' },
+    { id: 'voice_telephone', name: isArabic ? '☎️ صوت هاتف (Telephone)' : '☎️ Telephone' },
+    { id: 'voice_radio', name: isArabic ? '📻 صوت راديو قديم (Radio)' : '📻 Vintage Radio' },
+    { id: 'voice_alien', name: isArabic ? '👽 صوت فضائي (Alien)' : '👽 Alien Voice' },
   ];
 
   const isAnyDeckPlaying = deckAState.isPlaying || deckBState.isPlaying;

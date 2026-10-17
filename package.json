@@ -3,8 +3,15 @@
   "version": "3.14.5",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "app"
+  ],
   "scripts": {
-    "build": "npm run build --prefix app && node -e \"require('fs').cpSync('app/dist', 'dist', {recursive:true})\""
+    "dev": "npm --prefix app run dev",
+    "start": "npm --prefix app run dev",
+    "build": "npm run build --prefix app && node -e \"require('fs').cpSync('app/dist', 'dist', {recursive:true})\"",
+    "preview": "npm --prefix app run preview",
+    "lint": "npm --prefix app run lint"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

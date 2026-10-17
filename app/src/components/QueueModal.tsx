@@ -56,12 +56,28 @@ export const QueueModal: React.FC<QueueModalProps> = ({
             <h3 className="font-bold text-base whitespace-nowrap">{isArabic ? 'قائمة التشغيل الحالية' : 'Play Queue'} ({queue.length})</h3>
           </div>
           <div className="flex items-center justify-end gap-1.5 flex-wrap">
-            {queue.some((song) => Boolean(getOnlineDownloadEndpoint(song))) && (
-              <button type="button" disabled={isDownloadingOnlineQueue} onClick={() => onDownloadOnlineTracks(queue.filter((song) => Boolean(getOnlineDownloadEndpoint(song))))} className="player-control-button p-2 rounded-lg flex items-center gap-1.5 text-xs font-semibold disabled:opacity-50" title={isArabic ? 'تنزيل كل أغاني الأونلاين الموجودة في القائمة بالتتابع' : 'Download all online tracks in the queue sequentially'} aria-label={isArabic ? 'تنزيل الأغاني الموجودة في قائمة التشغيل' : 'Download online songs in the queue'} style={{ color: themeColors.primary, borderColor: themeColors.primary }}>
-                <Download className="w-4 h-4" />
-                <span>{isDownloadingOnlineQueue ? (isArabic ? 'جاري التنزيل…' : 'Downloading…') : (isArabic ? 'تنزيل الأونلاين' : 'Download online')}</span>
-              </button>
-            )}
+            {(() => {
+              const onlineTracks = queue.filter((song) => Boolean(song.onlineSource || getOnlineDownloadEndpoint(song)));
+              if (onlineTracks.length === 0) return null;
+              return (
+                <button
+                  type="button"
+                  disabled={isDownloadingOnlineQueue}
+                  onClick={() => onDownloadOnlineTracks(onlineTracks)}
+                  className="player-control-button px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 transition-all shadow-sm"
+                  title={isArabic ? 'تنزيل أغاني الأونلاين فقط في قائمة التشغيل تباعاً بضغطة تنزيل واحدة' : 'Download only online songs in the queue sequentially with a single click'}
+                  aria-label={isArabic ? 'تنزيل أغاني الأونلاين في قائمة التشغيل' : 'Download online songs in play queue'}
+                  style={{ color: '#ffffff', backgroundColor: themeColors.primary, borderColor: themeColors.primary }}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>
+                    {isDownloadingOnlineQueue
+                      ? (isArabic ? 'جاري التنزيل…' : 'Downloading…')
+                      : (isArabic ? `تنزيل الأونلاين (${onlineTracks.length})` : `Download Online (${onlineTracks.length})`)}
+                  </span>
+                </button>
+              );
+            })()}
             {queue.length > 0 && (
               <button
                 onClick={onClearQueue}

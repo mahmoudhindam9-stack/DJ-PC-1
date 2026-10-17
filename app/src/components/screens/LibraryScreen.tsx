@@ -22,7 +22,7 @@ import {
   Download,
 } from 'lucide-react';
 import { AudioItem, Playlist, LibrarySubTab, ThemeColors } from '../../types';
-import { downloadOnlineItem, getOnlineDownloadEndpoint } from '../../services/OnlineMusicService';
+import { downloadOnlineItem, downloadOnlineItemAsync, getOnlineDownloadEndpoint } from '../../services/OnlineMusicService';
 import {
   AUDIO_INPUT_ACCEPT,
   extractFilesFromDataTransfer,
@@ -107,18 +107,34 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
     return () => { active = false; };
   }, [selectedPlaylist?.id, onLoadPlaylistSongs]);
 
-  const downloadPlaylistOnlineSongs = () => {
+  const [isDownloadingPlaylist, setIsDownloadingPlaylist] = useState(false);
+
+  const downloadPlaylistOnlineSongs = async () => {
+    if (isDownloadingPlaylist) return;
     const onlineSongs = selectedPlaylistSongs.filter((song) => Boolean(getOnlineDownloadEndpoint(song)));
     if (onlineSongs.length === 0) {
       setPlaylistDownloadMessage(isArabic ? 'لا توجد أغاني أونلاين قابلة للتنزيل في هذه القائمة.' : 'No downloadable online songs in this playlist.');
       return;
     }
-    onlineSongs.forEach((song, index) => {
-      window.setTimeout(() => { downloadOnlineItem(song); }, index * 900);
-    });
+    setIsDownloadingPlaylist(true);
+    let successCount = 0;
+    for (let index = 0; index < onlineSongs.length; index += 1) {
+      const song = onlineSongs[index];
+      setPlaylistDownloadMessage(isArabic
+        ? `جاري تنزيل (${index + 1}/${onlineSongs.length}): ${song.title}…`
+        : `Downloading (${index + 1}/${onlineSongs.length}): ${song.title}…`);
+      try {
+        await downloadOnlineItemAsync(song);
+        successCount += 1;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      } catch {
+        downloadOnlineItem(song);
+      }
+    }
+    setIsDownloadingPlaylist(false);
     setPlaylistDownloadMessage(isArabic
-      ? `بدأ تنزيل ${onlineSongs.length} أغنية أونلاين. قد يطلب المتصفح السماح بتنزيل ملفات متعددة.`
-      : `Started ${onlineSongs.length} online downloads. Your browser may ask permission for multiple files.`);
+      ? `اكتمل تنزيل أغاني الأونلاين بنجاح (${successCount} أغنية)!`
+      : `Successfully downloaded ${successCount} online song(s)!`);
   };
 
   // Filter & Sort Logic
@@ -800,7 +816,16 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 {selectedPlaylistSongs.length > 0 && <button onClick={() => onPlaySong(selectedPlaylistSongs[0], selectedPlaylistSongs)} className="px-3 py-2 rounded-xl text-xs font-bold text-white" style={{ backgroundColor: themeColors.primary }}><Play className="w-3.5 h-3.5 inline mr-1" />{isArabic ? 'تشغيل القائمة' : 'Play playlist'}</button>}
-                <button onClick={downloadPlaylistOnlineSongs} disabled={isPlaylistLoading || !selectedPlaylistSongs.some((song) => Boolean(getOnlineDownloadEndpoint(song)))} className="px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 disabled:opacity-40" style={{ borderColor: themeColors.border }} title={isArabic ? 'تنزيل أغاني الأونلاين في القائمة' : 'Download online songs in playlist'}><Download className="w-3.5 h-3.5" />{isArabic ? 'تنزيل أغاني الأونلاين' : 'Download online'}</button>
+                <button
+                  onClick={downloadPlaylistOnlineSongs}
+                  disabled={isDownloadingPlaylist || isPlaylistLoading || !selectedPlaylistSongs.some((song) => Boolean(getOnlineDownloadEndpoint(song)))}
+                  className="px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 disabled:opacity-40"
+                  style={{ borderColor: themeColors.border, backgroundColor: isDownloadingPlaylist ? `${themeColors.primary}25` : 'transparent' }}
+                  title={isArabic ? 'تنزيل أغاني الأونلاين فقط في هذه القائمة تباعاً بضغطة تنزيل واحدة' : 'Download online songs in this playlist sequentially with one click'}
+                >
+                  {isDownloadingPlaylist ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  {isDownloadingPlaylist ? (isArabic ? 'جاري التنزيل…' : 'Downloading…') : (isArabic ? 'تنزيل أغاني الأونلاين' : 'Download online')}
+                </button>
                 <button onClick={() => setSelectedPlaylist(null)} className="p-2 rounded-xl border" style={{ borderColor: themeColors.border }} aria-label={isArabic ? 'إغلاق القائمة' : 'Close playlist'}><X className="w-4 h-4" /></button>
               </div>
             </div>

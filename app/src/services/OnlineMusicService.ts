@@ -232,41 +232,101 @@ export function getOnlineDownloadEndpoint(item: {
 }): string | null {
   if (item.downloadUri) return item.downloadUri;
   const sourceUrl = item.sourceUrl || '';
+  const titleName = encodeURIComponent(item.title || 'song');
+
   if (item.onlineSource === 'ALBUMATY' && sourceUrl) {
-    return `/api/albumaty/download?url=${encodeURIComponent(sourceUrl)}`;
+    return `/api/albumaty/download?url=${encodeURIComponent(sourceUrl)}&name=${titleName}.mp3`;
   }
   if (item.onlineSource === 'AUDIUS' && sourceUrl) {
-    return `/api/online/download?url=${encodeURIComponent(sourceUrl)}&name=${encodeURIComponent(item.title || 'song')}.mp3`;
+    return `/api/online/download?url=${encodeURIComponent(sourceUrl)}&name=${titleName}.mp3`;
+  }
+
+  // Handle stream API URIs
+  if (item.uri) {
+    if (item.uri.startsWith('/api/albumaty/stream?url=')) {
+      const parsedUrl = item.uri.slice('/api/albumaty/stream?url='.length);
+      return `/api/albumaty/download?url=${parsedUrl}&name=${titleName}.mp3`;
+    }
+    if (item.uri.startsWith('/api/online/stream?url=')) {
+      const parsedUrl = item.uri.slice('/api/online/stream?url='.length);
+      return `/api/online/download?url=${parsedUrl}&name=${titleName}.mp3`;
+    }
   }
 
   const legacyAlbumatyUrl = item.id.startsWith('albumaty_')
     ? decodeURIComponent(item.id.slice('albumaty_'.length))
     : item.id;
   if (/^https?:\/\/(?:www\.)?albumaty\.com\/song\//i.test(legacyAlbumatyUrl)) {
-    return `/api/albumaty/download?url=${encodeURIComponent(legacyAlbumatyUrl)}`;
+    return `/api/albumaty/download?url=${encodeURIComponent(legacyAlbumatyUrl)}&name=${titleName}.mp3`;
   }
 
   const legacyAudiusUrl = sourceUrl || item.uri;
   try {
     const parsed = new URL(legacyAudiusUrl, window.location.origin);
     if (/^(?:[^.]+\.)*audius\.co$/i.test(parsed.hostname) && parsed.pathname.includes('/tracks/')) {
-      return `/api/online/download?url=${encodeURIComponent(legacyAudiusUrl)}&name=${encodeURIComponent(item.title || 'song')}.mp3`;
+      return `/api/online/download?url=${encodeURIComponent(legacyAudiusUrl)}&name=${titleName}.mp3`;
     }
   } catch {
     // Ignore malformed legacy URLs.
   }
+
+  if (item.onlineSource) {
+    return `/api/albumaty/download?url=${encodeURIComponent(sourceUrl || item.uri)}&name=${titleName}.mp3`;
+  }
+
   return null;
 }
 
 export function downloadOnlineItem(item: Parameters<typeof getOnlineDownloadEndpoint>[0]): boolean {
   const url = getOnlineDownloadEndpoint(item);
   if (!url) return false;
+  const fileName = `${(item.title || 'song').replace(/[\\/:*?"<>|\r\n]/g, '_')}.mp3`;
   const anchor = document.createElement('a');
   anchor.href = url;
+  anchor.download = fileName;
   anchor.rel = 'noopener';
   anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();
-  anchor.remove();
+  setTimeout(() => anchor.remove(), 2000);
   return true;
+}
+
+export async function downloadOnlineItemAsync(
+  item: Parameters<typeof getOnlineDownloadEndpoint>[0],
+  onStatus?: (msg: string) => void
+): Promise<void> {
+  const url = getOnlineDownloadEndpoint(item);
+  if (!url) throw new Error('No valid download endpoint found for this track.');
+  onStatus?.('Downloading audio stream...');
+  const response = await fetch(url, { headers: { Accept: 'audio/*, application/octet-stream, */*' } });
+  if (!response.ok) {
+    let errMsg = `Download failed with HTTP ${response.status}`;
+    try {
+      const json = await response.json();
+      if (json && (json.error || json.message)) errMsg = json.error || json.message;
+    } catch {
+      // not JSON
+    }
+    throw new Error(errMsg);
+  }
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const json = await response.json().catch(() => null);
+    throw new Error(json?.error || json?.message || 'Server returned an error instead of audio.');
+  }
+  const blob = await response.blob();
+  if (blob.size === 0) throw new Error('Downloaded audio file was empty.');
+  const blobUrl = URL.createObjectURL(blob);
+  const fileName = `${(item.title || 'song').replace(/[\\/:*?"<>|\r\n]/g, '_')}.mp3`;
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = fileName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(blobUrl);
+  }, 15000);
 }
