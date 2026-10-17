@@ -135,7 +135,18 @@ function pageType(url) {
 }
 
 function isSongUrl(url) {
-  return pageType(url) === 'song';
+  const parts = pathParts(url);
+  if (parts.length === 0) return false;
+  const kind = pageType(url);
+  return kind === 'song' || parts.includes('song') || parts.includes('download') || parts.includes('song.php') || /\.(?:mp3|m4a|wav|ogg)$/i.test(url);
+}
+
+function isDirectAudioStreamUrl(url) {
+  if (!url) return false;
+  if (/\.(?:mp3|m4a|wav|ogg|aac|flac)(?:\?|$)/i.test(url)) return true;
+  if (/\/up\/upload\//i.test(url) || /\/upload\//i.test(url)) return true;
+  if (/^https?:\/\/serv\d*\.albumaty\.com/i.test(url)) return true;
+  return false;
 }
 
 function isAlbumUrl(url) {
@@ -447,6 +458,8 @@ async function proxyAudioStream(req, res, url, downloadName) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let upstream;
+  const isHead = req.method === 'HEAD';
+  const method = isHead ? 'HEAD' : 'GET';
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DJ Desktop Studio',
     Accept: 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8',
@@ -456,7 +469,7 @@ async function proxyAudioStream(req, res, url, downloadName) {
   headers.Referer = parsed && isAllowedAudioUrl(url) ? parsed.origin + '/' : 'https://audius.co/';
 
   try {
-    upstream = await fetch(url, { signal: controller.signal, redirect: 'follow', headers });
+    upstream = await fetch(url, { method, signal: controller.signal, redirect: 'follow', headers });
   } finally {
     // Only connection setup has a timeout. The audio body may be much longer than 15 seconds.
     clearTimeout(timer);
@@ -472,7 +485,7 @@ async function proxyAudioStream(req, res, url, downloadName) {
     throw new Error('Audio host redirected to an unsupported destination.');
   }
 
-  if ((!upstream.ok && upstream.status !== 206) || !upstream.body) {
+  if ((!upstream.ok && upstream.status !== 206) || (!upstream.body && !isHead)) {
     throw new Error('Audio stream failed (HTTP ' + upstream.status + ')');
   }
 
@@ -480,6 +493,9 @@ async function proxyAudioStream(req, res, url, downloadName) {
     'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
     'Cache-Control': 'no-store',
     'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
   };
   const contentLength = upstream.headers.get('content-length');
   const contentRange = upstream.headers.get('content-range');
@@ -493,6 +509,10 @@ async function proxyAudioStream(req, res, url, downloadName) {
   }
 
   res.writeHead(upstream.status, responseHeaders);
+  if (isHead || !upstream.body) {
+    res.end();
+    return;
+  }
   for await (const chunk of upstream.body) {
     if (!res.write(Buffer.from(chunk))) {
       await new Promise((resolve) => res.once('drain', resolve));
@@ -1015,10 +1035,19 @@ async function handleApi(req, res) {
       return true;
     }
 
-    if (requestUrl.pathname === '/api/albumaty/stream' && req.method === 'GET') {
+    if (requestUrl.pathname === '/api/albumaty/stream' && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
       const target = requestUrl.searchParams.get('url') || '';
       const normalized = normalizeAlbumatyUrl(target);
-      if (/\.(?:mp3|m4a|wav|ogg)(?:\?|$)/i.test(normalized) || isAllowedAudioUrl(normalized)) {
+      if (isDirectAudioStreamUrl(normalized)) {
         await proxyAudioStream(req, res, normalized);
       } else {
         const resolved = await resolveAlbumatySong(normalized);
@@ -1027,11 +1056,20 @@ async function handleApi(req, res) {
       return true;
     }
 
-    if (requestUrl.pathname === '/api/albumaty/download' && req.method === 'GET') {
+    if (requestUrl.pathname === '/api/albumaty/download' && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
       const target = requestUrl.searchParams.get('url') || '';
       const normalized = normalizeAlbumatyUrl(target);
       const requestedName = requestUrl.searchParams.get('name') || '';
-      if (/\.(?:mp3|m4a|wav|ogg)(?:\?|$)/i.test(normalized) || isAllowedAudioUrl(normalized)) {
+      if (isDirectAudioStreamUrl(normalized)) {
         const safeName = requestedName || path.basename(new URL(normalized).pathname) || 'song.mp3';
         await proxyAudioStream(req, res, normalized, safeName.toLowerCase().endsWith('.mp3') ? safeName : safeName + '.mp3');
       } else {
@@ -1042,7 +1080,16 @@ async function handleApi(req, res) {
       return true;
     }
 
-    if ((requestUrl.pathname === '/api/online/stream' || requestUrl.pathname === '/api/online/download') && req.method === 'GET') {
+    if ((requestUrl.pathname === '/api/online/stream' || requestUrl.pathname === '/api/online/download') && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
       const target = requestUrl.searchParams.get('url') || '';
       if (!isAllowedAudiusUrl(target)) {
         sendJson(res, 400, { ok: false, error: 'Invalid Audius audio URL.' });

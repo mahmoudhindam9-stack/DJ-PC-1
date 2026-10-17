@@ -46,8 +46,16 @@ const EMPTY_ALBUMATY: AlbumatyHomeData = {
 
 function isSong(url: string): boolean {
   try {
+    const parsed = new URL(url.startsWith('/') ? `https://www.albumaty.com${url}` : url);
+    const parts = parsed.pathname.toLowerCase().split('/').filter(Boolean);
+    if (parts.length === 0) return false;
+    const kind = ['n', 'a'].includes(parts[0]) ? (parts[1] || '') : (parts[0] || '');
     return (
-      new URL(url).pathname.toLowerCase().split('/').filter(Boolean)[0] === 'song'
+      kind === 'song' ||
+      parts.includes('song') ||
+      parts.includes('download') ||
+      parts.includes('song.php') ||
+      /\.(?:mp3|m4a|wav|ogg)$/i.test(parsed.pathname)
     );
   } catch {
     return false;

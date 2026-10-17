@@ -86,18 +86,20 @@ class OnlineMusicService {
 
   convertResolvedToAudioItem(track: ResolvedOnlineTrack, stableId?: string): AudioItem {
     const sourceUrl = track.id;
+    const streamTarget = track.streamUrl || sourceUrl;
+    const downloadTarget = track.downloadUrl || sourceUrl;
     return {
       id: stableId || `albumaty_${encodeURIComponent(track.id)}`,
       title: track.title,
       artist: track.artist || 'Albumaty',
       album: track.album || 'Albumaty Online',
       duration: track.duration || 0,
-      uri: this.getAlbumatyStreamEndpoint(sourceUrl),
+      uri: this.getAlbumatyStreamEndpoint(streamTarget),
       coverUri: track.artworkUrl,
       addedDate: Date.now(),
       onlineSource: 'ALBUMATY',
       sourceUrl,
-      downloadUri: this.getAlbumatyDownloadEndpoint(sourceUrl),
+      downloadUri: this.getAlbumatyDownloadEndpoint(downloadTarget),
     };
   }
 
