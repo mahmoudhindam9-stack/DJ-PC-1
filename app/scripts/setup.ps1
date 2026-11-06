@@ -60,12 +60,12 @@ try {
         if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
             Write-Host ""
             Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
-            Write-Host "[!] تنبيه: يتطلب تشغيل البرنامج تثبيت Node.js LTS لأول مرة على جهازك." -ForegroundColor Yellow
-            Write-Host "    يرجى تنزيل وتثبيت Node.js من: https://nodejs.org" -ForegroundColor White
-            Write-Host "    بعد اكتمال التثبيت، شغّل ملف setup.bat مرة أخرى وسيعمل فوراً!" -ForegroundColor White
+            Write-Host "[!] Note: Node.js LTS is required to run DJ Desktop Studio." -ForegroundColor Yellow
+            Write-Host "    Please download and install Node.js LTS from: https://nodejs.org" -ForegroundColor White
+            Write-Host "    After installation, run setup.bat again to start the app!" -ForegroundColor White
             Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
             Write-Host ""
-            Read-Host "اضغط Enter للمتابعة أو الخروج (Press Enter to exit)..."
+            Read-Host "Press Enter to exit..."
             exit 1
         }
     }
@@ -147,16 +147,16 @@ try {
     Write-Host "======================================================================" -ForegroundColor Green
     Write-Host "               DJ DESKTOP STUDIO IS READY" -ForegroundColor Green
     Write-Host "======================================================================" -ForegroundColor Green
-    Write-Host "تم اكتمال التثبيت وتشغيل البرنامج بنجاح!" -ForegroundColor Green
+    Write-Host "Installation completed and application launched successfully!" -ForegroundColor Green
     Start-Sleep -Seconds 2
     exit 0
 
 } catch {
     Write-Host ""
     Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
-    Write-Host "[!] حدث خطأ أثناء التثبيت: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[!] Error during setup: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
     Write-Host ""
-    Read-Host "اضغط Enter للإغلاق (Press Enter to close)..."
+    Read-Host "Press Enter to close..."
     exit 1
 }
