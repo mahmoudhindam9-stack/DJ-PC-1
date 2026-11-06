@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,8 +28,10 @@ for (let i = 0; i < rawArgs.length; i++) {
   }
 }
 
-// Locate local vite binary
-const viteBin = path.resolve(appDir, 'node_modules', '.bin', 'vite');
+// Locate local or workspace-hoisted vite binary
+const localViteBin = path.resolve(appDir, 'node_modules', '.bin', 'vite');
+const rootViteBin = path.resolve(appDir, '..', 'node_modules', '.bin', 'vite');
+const viteBin = fs.existsSync(localViteBin) ? localViteBin : rootViteBin;
 
 const viteProcess = spawn(
   viteBin,

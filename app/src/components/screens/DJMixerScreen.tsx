@@ -559,12 +559,20 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   ];
 
   const handleBeatSync = () => {
-    const synced = deckBEngine.syncToDeck(deckAEngine);
-    if (synced) {
-      setBeatSyncMessage(isArabic ? 'تمت مزامنة الإيقاع (SYNC)' : 'Beat Synced!');
-    } else {
+    const bpmA = deckAState.currentBpm;
+    const bpmB = deckBState.currentBpm;
+    if (bpmA && bpmB && bpmA > 0 && bpmB > 0) {
+      const targetRatio = clampMixerValue((bpmA / bpmB) * deckBState.pitch, 0.5, 1.5);
+      deckBEngine.setPitch(targetRatio);
       setBeatSyncMessage(
-        isArabic ? 'شغّل الديك A و B للمزامنة' : 'Play Deck A & B to Beat Sync'
+        isArabic
+          ? `تمت مزامنة الإيقاع (${Math.round(bpmA)} BPM)`
+          : `Synced to ${Math.round(bpmA)} BPM!`
+      );
+    } else {
+      deckBEngine.setPitch(deckAState.pitch);
+      setBeatSyncMessage(
+        isArabic ? 'تمت مطابقة سرعة الديك A و B' : 'Matched Deck B pitch to Deck A'
       );
     }
     setTimeout(() => setBeatSyncMessage(null), 2500);
@@ -659,8 +667,12 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
             isPlaying={state.isPlaying}
             pitch={state.pitch}
             hasTrack={Boolean(state.track)}
-            onBeginScratch={() => engine.beginScratch()}
-            onScratchDelta={(d, v) => engine.scratchMove(d, v)}
+            onBeginScratch={() => {
+              engine.startScratch();
+            }}
+            onScratchDelta={(d, v) =>
+              engine.scratchTo(engine.currentTimeMs + d * 1000, v * 1000)
+            }
             onEndScratch={() => engine.endScratch()}
           />
         </div>

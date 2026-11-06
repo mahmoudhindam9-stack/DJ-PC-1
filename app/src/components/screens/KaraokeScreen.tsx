@@ -175,8 +175,12 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1">
             <select
-              value={selectedDevice}
-              onChange={(e) => micEngine.setInputDevice(e.target.value)}
+              value={selectedDevice || 'default'}
+              onChange={(e) =>
+                micEngine.selectDevice(
+                  e.target.value === 'default' ? null : e.target.value
+                )
+              }
               className="px-2.5 py-1.5 rounded-lg border text-xs outline-none max-w-[200px]"
               style={{
                 backgroundColor: themeColors.background,
@@ -207,7 +211,7 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
           </div>
 
           <button
-            onClick={() => micEngine.setVoiceProcessing(!voiceProcessing)}
+            onClick={() => micEngine.toggleVoiceProcessing(!voiceProcessing)}
             className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
             style={{
               backgroundColor: voiceProcessing
@@ -284,13 +288,13 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
           <div
             className="h-full rounded-full transition-all duration-75"
             style={{
-              width: `${Math.min(100, Math.round(vuLevel * 100))}%`,
+              width: `${Math.min(100, Math.round(vuLevel))}%`,
               background: 'linear-gradient(90deg, #10b981, #eab308, #ef4444)',
             }}
           />
         </div>
         <span className="text-xs font-mono font-bold w-10 text-right">
-          {Math.round(vuLevel * 100)}%
+          {Math.round(vuLevel)}%
         </span>
       </div>
 

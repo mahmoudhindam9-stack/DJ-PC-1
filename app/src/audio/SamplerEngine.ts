@@ -177,6 +177,28 @@ export class SamplerEngine {
       this.pads[bank][index].assetPath = fileUrl;
     }
   }
+
+  stopAll() {
+    for (const [, source] of this.activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // ignore
+      }
+    }
+    this.activeSources.clear();
+    for (const [, entry] of this.fallbackAudioNodes) {
+      try {
+        entry.audio.pause();
+        entry.audio.currentTime = 0;
+        entry.source.disconnect();
+        entry.gain.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    this.fallbackAudioNodes.clear();
+  }
 }
 
 export const samplerEngine = new SamplerEngine();

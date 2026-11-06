@@ -272,8 +272,9 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
         setSectionHistory((prev) => [...prev, activeSection]);
       }
       setActiveSection(section);
-      if (section.songs.length > 0) setSubTab('SONGS');
-      else if (section.sublinks.length > 0) setSubTab('ARTISTS');
+      const hasSongs = section.content.some((l) => isSong(l.url));
+      if (hasSongs) setSubTab('SONGS');
+      else setSubTab('ARTISTS');
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -292,7 +293,8 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
       const prev = sectionHistory[sectionHistory.length - 1];
       setSectionHistory((h) => h.slice(0, -1));
       setActiveSection(prev);
-      if (prev.songs.length > 0) setSubTab('SONGS');
+      const hasSongs = prev.content.some((l) => isSong(l.url));
+      if (hasSongs) setSubTab('SONGS');
       else setSubTab('ARTISTS');
     } else {
       setActiveSection(null);
@@ -469,21 +471,31 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     return source === 'OLDIES' ? oldiesHome : albumatyHome;
   }, [source, searchResults, oldiesHome, albumatyHome]);
 
+  const sectionSongs = useMemo<AlbumatyLink[]>(() => {
+    if (!activeSection) return [];
+    return activeSection.content.filter((l) => isSong(l.url));
+  }, [activeSection]);
+
+  const sectionSublinks = useMemo<AlbumatyLink[]>(() => {
+    if (!activeSection) return [];
+    return activeSection.content.filter((l) => !isSong(l.url));
+  }, [activeSection]);
+
   const currentItems = useMemo(() => {
     if (source === 'AUDIUS') {
       return audiusTracks.map((t) => ({ kind: 'AUDIUS' as const, track: t }));
     }
     if (activeSection) {
-      if (subTab === 'SONGS' && activeSection.songs.length > 0) {
-        return activeSection.songs.map((link) => ({ kind: 'SONG' as const, link }));
+      if (subTab === 'SONGS' && sectionSongs.length > 0) {
+        return sectionSongs.map((link) => ({ kind: 'SONG' as const, link }));
       }
-      if (activeSection.sublinks.length > 0) {
-        return activeSection.sublinks.map((link) => ({
+      if (sectionSublinks.length > 0) {
+        return sectionSublinks.map((link) => ({
           kind: isSong(link.url) ? ('SONG' as const) : ('SECTION' as const),
           link,
         }));
       }
-      return activeSection.songs.map((link) => ({ kind: 'SONG' as const, link }));
+      return sectionSongs.map((link) => ({ kind: 'SONG' as const, link }));
     }
     if (subTab === 'SONGS') {
       return activeCatalog.songs.map((link) => ({ kind: 'SONG' as const, link }));
@@ -495,7 +507,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
       return activeCatalog.albums.map((link) => ({ kind: 'SECTION' as const, link }));
     }
     return activeCatalog.categories.map((link) => ({ kind: 'SECTION' as const, link }));
-  }, [source, activeSection, subTab, activeCatalog, audiusTracks]);
+  }, [source, activeSection, sectionSongs, sectionSublinks, subTab, activeCatalog, audiusTracks]);
 
   const totalPages = Math.max(1, Math.ceil(currentItems.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -694,7 +706,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
           <div className="flex items-center gap-1.5 flex-wrap">
             {activeSection ? (
               <>
-                {activeSection.songs.length > 0 && (
+                {sectionSongs.length > 0 && (
                   <button
                     onClick={() => setSubTab('SONGS')}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
@@ -711,11 +723,11 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
                   >
                     <Music2 className="w-3.5 h-3.5" />
                     {isArabic
-                      ? `الأغاني (${activeSection.songs.length})`
-                      : `Songs (${activeSection.songs.length})`}
+                      ? `الأغاني (${sectionSongs.length})`
+                      : `Songs (${sectionSongs.length})`}
                   </button>
                 )}
-                {activeSection.sublinks.length > 0 && (
+                {sectionSublinks.length > 0 && (
                   <button
                     onClick={() => setSubTab('ARTISTS')}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
@@ -732,8 +744,8 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
                   >
                     <FolderOpen className="w-3.5 h-3.5" />
                     {isArabic
-                      ? `الأقسام والألبومات (${activeSection.sublinks.length})`
-                      : `Items (${activeSection.sublinks.length})`}
+                      ? `الأقسام والألبومات (${sectionSublinks.length})`
+                      : `Items (${sectionSublinks.length})`}
                   </button>
                 )}
               </>
