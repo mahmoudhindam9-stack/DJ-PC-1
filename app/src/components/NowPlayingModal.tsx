@@ -10,7 +10,6 @@ import {
   Shuffle,
   Volume2,
   Heart,
-  Share2,
   ListMusic,
   Sliders,
   Disc,
@@ -65,7 +64,6 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Live FFT Audio Visualizer Loop
   useEffect(() => {
     let animId: number;
     const canvas = canvasRef.current;
@@ -109,54 +107,58 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
   return (
     <div
       id="now-playing-fullscreen"
-      className="fixed inset-0 z-50 flex flex-col p-6 backdrop-blur-2xl select-none"
+      className="fixed inset-0 z-50 flex flex-col justify-between p-4 backdrop-blur-2xl select-none overflow-hidden"
       style={{
         backgroundColor: `${themeColors.background}f6`,
         color: themeColors.textPrimary,
       }}
     >
       {/* Top Bar */}
-      <div className="flex items-center justify-between pb-4 border-b" style={{ borderColor: themeColors.border }}>
+      <div
+        className="flex items-center justify-between pb-2.5 border-b shrink-0"
+        style={{ borderColor: themeColors.border }}
+      >
         <button
           onClick={onClose}
-          className="p-2 rounded-full hover:bg-white/10 transition-colors"
+          className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
           title="Minimize View"
         >
-          <ChevronDown className="w-6 h-6" />
+          <ChevronDown className="w-5 h-5" />
         </button>
 
-        <div className="text-center">
-          <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: themeColors.primary }}>
-            {isArabic ? 'قيد التشغيل الآن' : 'Now Playing'}
-          </span>
-          <h3 className="text-xs font-medium" style={{ color: themeColors.textMuted }}>
-            {currentSong?.album || 'DJ Desktop'}
-          </h3>
-        </div>
+        <span
+          className="text-xs uppercase tracking-widest font-bold"
+          style={{ color: themeColors.primary }}
+        >
+          {isArabic ? 'قيد التشغيل الآن' : 'Now Playing'}
+        </span>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             onClick={onOpenEqualizer}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
             title="Equalizer"
           >
-            <Sliders className="w-5 h-5" />
+            <Sliders className="w-4 h-4" />
           </button>
           <button
             onClick={onOpenQueue}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
             title="Queue"
           >
-            <ListMusic className="w-5 h-5" />
+            <ListMusic className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full py-6">
-        {/* Album Artwork with Vinyl Rotation Effect */}
-        <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-2xl overflow-hidden shadow-2xl border flex items-center justify-center mb-6"
+      {/* Main Content Area (Proportional & No Scroll) */}
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-evenly max-w-xl mx-auto w-full py-2 overflow-hidden">
+        {/* Proportional Album Artwork */}
+        <div
+          className="relative rounded-2xl overflow-hidden shadow-2xl border flex items-center justify-center shrink-0"
           style={{
+            width: 'clamp(120px, 28vh, 240px)',
+            height: 'clamp(120px, 28vh, 240px)',
             borderColor: themeColors.border,
             backgroundColor: themeColors.surface,
           }}
@@ -165,19 +167,18 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
             <img
               src={currentSong.coverUri}
               alt={currentSong.title}
-              className={`w-full h-full object-cover transition-all ${isPlaying ? 'scale-105' : 'scale-100'}`}
+              className={`w-full h-full object-cover transition-all ${
+                isPlaying ? 'scale-105' : 'scale-100'
+              }`}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3">
-              <Disc
-                className={`w-28 h-28 ${isPlaying ? 'animate-spin' : ''}`}
-                style={{
-                  color: themeColors.primary,
-                  animationDuration: '6s',
-                }}
-              />
-              <span className="text-xs font-bold tracking-wider opacity-60">DJ AUDIO MASTER</span>
-            </div>
+            <Disc
+              className={`w-20 h-20 ${isPlaying ? 'animate-spin' : ''}`}
+              style={{
+                color: themeColors.primary,
+                animationDuration: '6s',
+              }}
+            />
           )}
         </div>
 
@@ -185,28 +186,31 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
         <canvas
           ref={canvasRef}
           width={480}
-          height={64}
-          className="w-full max-w-md h-12 rounded-lg opacity-80 mb-4"
+          height={48}
+          className="w-full max-w-md h-10 rounded-lg opacity-80 shrink-0"
         />
 
         {/* Song Info & Favorite Button */}
-        <div className="flex items-center justify-between w-full px-2 mb-4">
+        <div className="flex items-center justify-between w-full px-2 shrink-0">
           <div className="min-w-0 flex-1">
-            <h2 className="text-xl sm:text-2xl font-bold truncate leading-tight">
+            <h2 className="text-lg sm:text-xl font-bold truncate leading-tight">
               {currentSong?.title || (isArabic ? 'لا توجد أغنية' : 'No track loaded')}
             </h2>
-            <p className="text-sm font-medium truncate" style={{ color: themeColors.textMuted }}>
+            <p
+              className="text-xs font-medium truncate"
+              style={{ color: themeColors.textMuted }}
+            >
               {currentSong?.artist || 'DJ Studio'}
             </p>
           </div>
           {currentSong && (
             <button
               onClick={() => onToggleFavorite(currentSong)}
-              className="p-3 rounded-full hover:bg-white/10 transition-colors ml-4"
+              className="p-2 rounded-full hover:bg-white/10 transition-colors ml-3 shrink-0"
               title="Favorite"
             >
               <Heart
-                className="w-6 h-6 transition-all"
+                className="w-5 h-5 transition-all"
                 style={{
                   color: currentSong.isFavorite ? '#ff1744' : themeColors.textMuted,
                   fill: currentSong.isFavorite ? '#ff1744' : 'none',
@@ -217,80 +221,100 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
         </div>
 
         {/* Progress Scrubber */}
-        <div className="w-full px-2 mb-6">
+        <div className="w-full px-2 shrink-0">
           <input
             type="range"
             min={0}
             max={durationMs || 100}
             value={currentTimeMs || 0}
             onChange={(e) => onSeek(Number(e.target.value))}
-            className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
             style={{
               accentColor: themeColors.primary,
               backgroundColor: themeColors.surfaceVariant,
             }}
           />
-          <div className="flex justify-between text-xs mt-1.5" style={{ color: themeColors.textMuted }}>
+          <div
+            className="flex justify-between text-[11px] mt-1"
+            style={{ color: themeColors.textMuted }}
+          >
             <span>{formatTime(currentTimeMs)}</span>
             <span>{formatTime(durationMs)}</span>
           </div>
         </div>
 
         {/* Playback Controls */}
-        <div className="flex items-center justify-center gap-6 mb-6">
+        <div className="flex items-center justify-center gap-5 shrink-0">
           <button
             onClick={onTogglePlaybackMode}
             className="p-2 rounded-full hover:bg-white/10 transition-colors"
             style={{
-              color: playbackMode !== 'NORMAL' ? themeColors.primary : themeColors.textMuted,
+              color:
+                playbackMode !== 'NORMAL' ? themeColors.primary : themeColors.textMuted,
             }}
           >
             {playbackMode === 'REPEAT_ONE' ? (
-              <Repeat1 className="w-5 h-5" />
+              <Repeat1 className="w-4 h-4" />
             ) : playbackMode === 'SHUFFLE' ? (
-              <Shuffle className="w-5 h-5" />
+              <Shuffle className="w-4 h-4" />
             ) : (
-              <Repeat className="w-5 h-5" />
+              <Repeat className="w-4 h-4" />
             )}
           </button>
 
           <button
             onClick={onPrev}
-            className="p-3 rounded-full hover:bg-white/10 transition-colors"
+            className="p-2.5 rounded-full hover:bg-white/10 transition-colors"
             title="Previous"
           >
-            <SkipBack className="w-7 h-7" />
+            <SkipBack className="w-6 h-6" />
           </button>
 
           <button
             onClick={onPlayPause}
-            className="p-5 rounded-full shadow-2xl transition-transform active:scale-95"
+            className="p-4 rounded-full shadow-2xl transition-transform active:scale-95"
             style={{
               backgroundColor: themeColors.primary,
               color: '#ffffff',
             }}
             title={isPlaying ? 'Pause' : 'Play'}
           >
-            {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+            {isPlaying ? (
+              <Pause className="w-7 h-7 fill-current" />
+            ) : (
+              <Play className="w-7 h-7 fill-current ml-0.5" />
+            )}
           </button>
 
           <button
             onClick={onNext}
-            className="p-3 rounded-full hover:bg-white/10 transition-colors"
+            className="p-2.5 rounded-full hover:bg-white/10 transition-colors"
             title="Next"
           >
-            <SkipForward className="w-7 h-7" />
+            <SkipForward className="w-6 h-6" />
           </button>
 
-          <div className="w-5" />
+          <div className="flex items-center gap-1.5">
+            <Volume2 className="w-4 h-4 opacity-70" />
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(e) => onVolumeChange(Number(e.target.value))}
+              className="w-20 h-1.5 rounded-lg appearance-none cursor-pointer"
+              style={{ accentColor: themeColors.primary }}
+            />
+          </div>
         </div>
 
         {/* Quick Send to DJ Decks */}
         {currentSong && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => onSendToDeckA && onSendToDeckA(currentSong)}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5"
+              className="px-3 py-1 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5"
               style={{
                 backgroundColor: `${themeColors.accentA}20`,
                 borderColor: themeColors.accentA,
@@ -298,12 +322,12 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
               }}
             >
               <Disc className="w-3.5 h-3.5" />
-              {isArabic ? 'إرسال إلى Deck A' : 'Send to Deck A'}
+              Deck A
             </button>
 
             <button
               onClick={() => onSendToDeckB && onSendToDeckB(currentSong)}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5"
+              className="px-3 py-1 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5"
               style={{
                 backgroundColor: `${themeColors.accentB}20`,
                 borderColor: themeColors.accentB,
@@ -311,7 +335,7 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
               }}
             >
               <Disc className="w-3.5 h-3.5" />
-              {isArabic ? 'إرسال إلى Deck B' : 'Send to Deck B'}
+              Deck B
             </button>
           </div>
         )}

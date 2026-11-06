@@ -104,14 +104,19 @@ function isAllowedAlbumatyUrl(raw) {
 function isAllowedAudioUrl(raw) {
   const parsed = parseUrl(raw);
   if (!parsed || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password) return false;
-  // Albumaty MP3 files may be hosted on a separate public CDN or media server.
-  // Reject local names, internal/private IP ranges, and unusual ports to avoid a general-purpose proxy.
+  // Reject local names, internal/private IP ranges, and privileged system ports to avoid SSRF.
   const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
   if (!host || host === 'localhost' || host.endsWith('.localhost') ||
       host.endsWith('.local') || host.endsWith('.internal') ||
       host.endsWith('.lan') || host.endsWith('.home.arpa')) return false;
-  if (host === '127.0.0.1' || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return false;
-  if (parsed.port && parsed.port !== '443' && parsed.port !== '80') return false;
+  if (host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' ||
+      /^10\./.test(host) || /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return false;
+  if (parsed.port) {
+    const portNum = Number(parsed.port);
+    if (!Number.isInteger(portNum) || portNum <= 0 || portNum > 65535) return false;
+    if (portNum !== 80 && portNum !== 443 && portNum < 1024) return false;
+  }
   return true;
 }
 
@@ -120,6 +125,18 @@ function isAllowedAudiusUrl(raw) {
   if (!parsed || !/^https?:$/.test(parsed.protocol)) return false;
   const host = parsed.hostname.toLowerCase();
   return host === 'audius.co' || host.endsWith('.audius.co') || host.includes('audius');
+}
+
+function isAllowedQuranAudioUrl(raw) {
+  const parsed = parseUrl(raw);
+  if (!parsed || !/^https?:$/.test(parsed.protocol)) return false;
+  const host = parsed.hostname.toLowerCase();
+  return (
+    host === 'mp3quran.net' ||
+    host.endsWith('.mp3quran.net') ||
+    host === 'qurango.net' ||
+    host.endsWith('.qurango.net')
+  );
 }
 
 function pathParts(url) {
@@ -199,7 +216,7 @@ function extractMainContentHtml(html) {
 
   const start = h1Match.index;
   const footerPattern =
-    /<(?:footer|\/footer)\b|(?:اتصل بنا|contact us|about us|جميع الحقوق محفوظة)/i;
+    /<(?:footer|\/footer)\b|class=["'][^"']*\bfooter\b|(?:اتصل بنا|contact us|about us|جميع الحقوق محفوظة)/i;
   const footerMatch = footerPattern.exec(html.slice(start + h1Match[0].length));
   const end = footerMatch && footerMatch.index != null
     ? start + h1Match[0].length + footerMatch.index
@@ -317,7 +334,7 @@ async function fetchText(url, accept = 'text/html,application/xhtml+xml') {
     });
 
     if (!response.ok) {
-      throw new Error(`Albumaty returned HTTP ${response.status}`);
+      throw new Error(`Upstream returned HTTP ${response.status}`);
     }
 
     return await response.text();
@@ -329,6 +346,243 @@ async function fetchText(url, accept = 'text/html,application/xhtml+xml') {
 async function getAlbumatyHome() {
   const html = await fetchText(`${ALBUMATY_BASE}/cat/1.html`);
   return parseHome(html);
+}
+
+// ============================================================================
+// OLDIES & CLASSICS (الزمن الجميل والكلاسيكيات)
+// ============================================================================
+const OLDIES_CATEGORIES = [
+  { title: 'أغاني الزمن الجميل - كلاسيكيات الطرب', url: 'https://www.albumaty.com/cat/2.html' },
+  { title: 'عمالقة الطرب الأصيل (أم كلثوم وعبد الحليم وفيروز)', url: 'virtual:oldies:tarab-legends' },
+  { title: 'نجمات الزمن الجميل (وردة ونجاة وصباح وشادية وفايزة)', url: 'virtual:oldies:golden-divas' },
+  { title: 'التراث الشعبي والمواويل القديمة', url: 'virtual:oldies:folk-classics' },
+  { title: 'الابتهالات والتواشيح الكلاسيكية (النقشبندي وطوبار)', url: 'virtual:oldies:spiritual-classics' },
+];
+
+const OLDIES_CLASSIC_ARTISTS = [
+  { title: 'ام كلثوم', url: 'https://www.albumaty.com/singer/26.html', group: 'tarab-legends' },
+  { title: 'عبد الحليم حافظ', url: 'https://www.albumaty.com/singer/124.html', group: 'tarab-legends' },
+  { title: 'فيروز', url: 'https://www.albumaty.com/singer/132.html', group: 'tarab-legends' },
+  { title: 'محمد عبد الوهاب', url: 'https://www.albumaty.com/singer/1801.html', group: 'tarab-legends' },
+  { title: 'وديع الصافي', url: 'https://www.albumaty.com/singer/945.html', group: 'tarab-legends' },
+  { title: 'وردة الجزائرية', url: 'https://www.albumaty.com/singer/702.html', group: 'golden-divas' },
+  { title: 'نجاة الصغيرة', url: 'https://www.albumaty.com/singer/770.html', group: 'golden-divas' },
+  { title: 'صباح', url: 'https://www.albumaty.com/singer/943.html', group: 'golden-divas' },
+  { title: 'فايزة احمد', url: 'https://www.albumaty.com/singer/1088.html', group: 'golden-divas' },
+  { title: 'شادية', url: 'https://www.albumaty.com/singer/1090.html', group: 'golden-divas' },
+  { title: 'سعاد حسني', url: 'https://www.albumaty.com/singer/1091.html', group: 'golden-divas' },
+  { title: 'محمد العزبي', url: 'https://www.albumaty.com/singer/1093.html', group: 'folk-classics' },
+  { title: 'محمد طه', url: 'https://www.albumaty.com/singer/1089.html', group: 'folk-classics' },
+  { title: 'بدرية السيد', url: 'https://www.albumaty.com/singer/1079.html', group: 'folk-classics' },
+  { title: 'كتكوت الامير', url: 'https://www.albumaty.com/singer/1080.html', group: 'folk-classics' },
+  { title: 'شفيق جلال', url: 'https://www.albumaty.com/singer/1078.html', group: 'folk-classics' },
+  { title: 'سيد النقشبندي', url: 'https://www.albumaty.com/singer/1970.html', group: 'spiritual-classics' },
+  { title: 'نصر الدين طوبار', url: 'https://www.albumaty.com/singer/1315.html', group: 'spiritual-classics' },
+];
+
+let oldiesHomeCache = null;
+let oldiesHomeCacheTime = 0;
+const OLDIES_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function dedupeLinks(links, limit = 300) {
+  const seen = new Set();
+  const out = [];
+  for (const item of links) {
+    if (!item || !item.url || !item.title) continue;
+    const key = item.url.replace(/\/$/, '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ title: item.title, url: item.url });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+async function getOldiesHome(forceRefresh = false) {
+  if (!forceRefresh && oldiesHomeCache && Date.now() - oldiesHomeCacheTime < OLDIES_CACHE_TTL_MS) {
+    return oldiesHomeCache;
+  }
+
+  const seedArtistUrls = OLDIES_CLASSIC_ARTISTS.slice(0, 12).map((a) => a.url);
+  const targets = [`${ALBUMATY_BASE}/cat/2.html`, ...seedArtistUrls];
+
+  const results = await Promise.all(
+    targets.map(async (url) => {
+      try {
+        const html = await fetchText(url);
+        const type = pageType(url);
+        return { url, items: parseSectionContent(html, type) };
+      } catch {
+        return { url, items: [] };
+      }
+    })
+  );
+
+  const cat2Items = results[0]?.items || [];
+  const artistPagesItems = results.slice(1).flatMap((r) => r.items);
+
+  const allArtists = dedupeLinks(
+    [
+      ...OLDIES_CLASSIC_ARTISTS.map(({ title, url }) => ({ title, url })),
+      ...cat2Items.filter((item) => isArtistUrl(item.url)),
+    ],
+    200
+  );
+
+  const allAlbums = dedupeLinks(
+    [
+      ...cat2Items.filter((item) => isAlbumUrl(item.url)),
+      ...artistPagesItems.filter((item) => isAlbumUrl(item.url)),
+    ],
+    200
+  );
+
+  let allSongs = dedupeLinks(
+    [
+      ...cat2Items.filter((item) => isSongUrl(item.url)),
+      ...artistPagesItems.filter((item) => isSongUrl(item.url)),
+    ],
+    250
+  );
+
+  // If the artist pages list albums first and fewer direct songs, pull tracks from the top classic albums
+  if (allSongs.length < 30 && allAlbums.length > 0) {
+    const sampleAlbums = allAlbums.slice(0, 6);
+    const albumTracks = await Promise.all(
+      sampleAlbums.map(async (album) => {
+        try {
+          const html = await fetchText(album.url);
+          return parseSectionContent(html, 'album');
+        } catch {
+          return [];
+        }
+      })
+    );
+    allSongs = dedupeLinks([...allSongs, ...albumTracks.flat()], 250);
+  }
+
+  const data = {
+    categories: OLDIES_CATEGORIES,
+    albums: allAlbums,
+    songs: allSongs,
+    artists: allArtists,
+  };
+
+  oldiesHomeCache = data;
+  oldiesHomeCacheTime = Date.now();
+  return data;
+}
+
+async function getOldiesSection(rawTargetUrl) {
+  const target = String(rawTargetUrl || '').trim();
+  if (target.startsWith('virtual:oldies:')) {
+    const groupKey = target.slice('virtual:oldies:'.length);
+    const categoryMeta = OLDIES_CATEGORIES.find((c) => c.url === target);
+    const groupArtists = OLDIES_CLASSIC_ARTISTS.filter((a) => a.group === groupKey);
+    const pages = await Promise.all(
+      groupArtists.map(async (artist) => {
+        try {
+          const html = await fetchText(artist.url);
+          return parseSectionContent(html, 'singer');
+        } catch {
+          return [];
+        }
+      })
+    );
+    const combined = dedupeLinks(
+      [
+        ...groupArtists.map(({ title, url }) => ({ title, url })),
+        ...pages.flat(),
+      ],
+      400
+    );
+    return {
+      title: categoryMeta ? categoryMeta.title : 'الزمن الجميل',
+      url: target,
+      content: combined,
+    };
+  }
+
+  return getAlbumatySection(normalizeAlbumatyUrl(target));
+}
+
+async function getOldiesSearch(query) {
+  const searchTerm = String(query || '').trim().slice(0, 120);
+  if (searchTerm.length < 2) {
+    return { categories: [], albums: [], songs: [], artists: [] };
+  }
+
+  const terms = normalizeAlbumatySearchText(searchTerm).split(' ').filter(Boolean);
+  if (terms.length === 0) {
+    return { categories: [], albums: [], songs: [], artists: [] };
+  }
+
+  const [homeData, albumatyResults] = await Promise.all([
+    getOldiesHome().catch(() => ({ categories: [], albums: [], songs: [], artists: [] })),
+    getAlbumatySearch(searchTerm).catch(() => ({ categories: [], albums: [], songs: [], artists: [] })),
+  ]);
+
+  const filterList = (items) =>
+    (items || []).filter((item) => albumatySearchMatches(item.title, terms));
+
+  return {
+    categories: dedupeLinks([
+      ...filterList(homeData.categories),
+      ...filterList(albumatyResults.categories),
+    ], 50),
+    artists: dedupeLinks([
+      ...filterList(homeData.artists),
+      ...filterList(albumatyResults.artists),
+    ], 150),
+    albums: dedupeLinks([
+      ...filterList(homeData.albums),
+      ...filterList(albumatyResults.albums),
+    ], 150),
+    songs: dedupeLinks([
+      ...filterList(homeData.songs),
+      ...filterList(albumatyResults.songs),
+    ], 250),
+  };
+}
+
+// ============================================================================
+// HOLY QURAN (MP3Quran.net v3 API)
+// ============================================================================
+const MP3QURAN_API_BASE = 'https://mp3quran.net/api/v3';
+const quranRecitersCache = new Map();
+const quranSuwarCache = new Map();
+const QURAN_CACHE_TTL_MS = 15 * 60 * 1000;
+
+async function getQuranReciters(lang = 'ar') {
+  const normalizedLang = lang === 'eng' || lang === 'en' ? 'eng' : 'ar';
+  const cached = quranRecitersCache.get(normalizedLang);
+  if (cached && Date.now() - cached.time < QURAN_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const jsonText = await fetchText(
+    `${MP3QURAN_API_BASE}/reciters?language=${normalizedLang}`,
+    'application/json'
+  );
+  const parsed = JSON.parse(jsonText);
+  const reciters = Array.isArray(parsed?.reciters) ? parsed.reciters : [];
+  quranRecitersCache.set(normalizedLang, { time: Date.now(), data: reciters });
+  return reciters;
+}
+
+async function getQuranSuwar(lang = 'ar') {
+  const normalizedLang = lang === 'eng' || lang === 'en' ? 'eng' : 'ar';
+  const cached = quranSuwarCache.get(normalizedLang);
+  if (cached && Date.now() - cached.time < QURAN_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const jsonText = await fetchText(
+    `${MP3QURAN_API_BASE}/suwar?language=${normalizedLang}`,
+    'application/json'
+  );
+  const parsed = JSON.parse(jsonText);
+  const suwar = Array.isArray(parsed?.suwar) ? parsed.suwar : [];
+  quranSuwarCache.set(normalizedLang, { time: Date.now(), data: suwar });
+  return suwar;
 }
 
 function normalizeAlbumatySearchText(value) {
@@ -480,7 +734,7 @@ async function proxyAudioStream(req, res, url, downloadName) {
   });
 
   // Validate the final URL too, because fetch follows redirects by default.
-  if (!isAllowedAudioUrl(upstream.url) && !isAllowedAudiusUrl(upstream.url)) {
+  if (!isAllowedAudioUrl(upstream.url) && !isAllowedAudiusUrl(upstream.url) && !isAllowedQuranAudioUrl(upstream.url)) {
     await upstream.body?.cancel().catch(() => {});
     throw new Error('Audio host redirected to an unsupported destination.');
   }
@@ -1080,6 +1334,138 @@ async function handleApi(req, res) {
       return true;
     }
 
+    // Oldies & Classics (الزمن الجميل والكلاسيكيات) API endpoints
+    if (requestUrl.pathname === '/api/oldies/home' && req.method === 'GET') {
+      const force = requestUrl.searchParams.get('force') === '1';
+      sendJson(res, 200, { ok: true, data: await getOldiesHome(force) });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/oldies/search' && req.method === 'GET') {
+      const query = requestUrl.searchParams.get('q') || '';
+      if (query.trim().length < 2) {
+        sendJson(res, 400, { ok: false, error: 'Enter at least two characters to search Oldies & Classics.' });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, data: await getOldiesSearch(query) });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/oldies/section' && req.method === 'GET') {
+      const target = requestUrl.searchParams.get('url') || '';
+      sendJson(res, 200, { ok: true, data: await getOldiesSection(target) });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/oldies/resolve' && req.method === 'GET') {
+      const target = requestUrl.searchParams.get('url') || '';
+      sendJson(res, 200, { ok: true, data: await resolveAlbumatySong(normalizeAlbumatyUrl(target)) });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/oldies/stream' && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
+      const target = requestUrl.searchParams.get('url') || '';
+      const normalized = normalizeAlbumatyUrl(target);
+      if (isDirectAudioStreamUrl(normalized)) {
+        await proxyAudioStream(req, res, normalized);
+      } else {
+        const resolved = await resolveAlbumatySong(normalized);
+        await proxyAudioStream(req, res, resolved.streamUrl);
+      }
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/oldies/download' && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
+      const target = requestUrl.searchParams.get('url') || '';
+      const normalized = normalizeAlbumatyUrl(target);
+      const requestedName = requestUrl.searchParams.get('name') || '';
+      if (isDirectAudioStreamUrl(normalized)) {
+        const safeName = requestedName || path.basename(new URL(normalized).pathname) || 'song.mp3';
+        await proxyAudioStream(req, res, normalized, safeName.toLowerCase().endsWith('.mp3') ? safeName : safeName + '.mp3');
+      } else {
+        const resolved = await resolveAlbumatySong(normalized);
+        const title = requestedName || resolved.title || 'song';
+        await proxyAudioStream(req, res, resolved.downloadUrl, title.toLowerCase().endsWith('.mp3') ? title : title + '.mp3');
+      }
+      return true;
+    }
+
+    // Holy Quran (MP3Quran.net) API endpoints
+    if (requestUrl.pathname === '/api/quran/reciters' && req.method === 'GET') {
+      const lang = requestUrl.searchParams.get('lang') || 'ar';
+      sendJson(res, 200, { ok: true, data: await getQuranReciters(lang) });
+      return true;
+    }
+
+    if (requestUrl.pathname === '/api/quran/suwar' && req.method === 'GET') {
+      const lang = requestUrl.searchParams.get('lang') || 'ar';
+      sendJson(res, 200, { ok: true, data: await getQuranSuwar(lang) });
+      return true;
+    }
+
+    if ((requestUrl.pathname === '/api/quran/stream' || requestUrl.pathname === '/api/quran/download') && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
+      const target = requestUrl.searchParams.get('url') || '';
+      if (!isAllowedQuranAudioUrl(target) && !isAllowedAudioUrl(target)) {
+        sendJson(res, 400, { ok: false, error: 'Invalid Quran audio URL.' });
+        return true;
+      }
+      if (requestUrl.pathname === '/api/quran/stream') {
+        await proxyAudioStream(req, res, target);
+      } else {
+        const requestedName = requestUrl.searchParams.get('name') || 'surah.mp3';
+        const safeName = requestedName.toLowerCase().endsWith('.mp3') ? requestedName : requestedName + '.mp3';
+        await proxyAudioStream(req, res, target, safeName);
+      }
+      return true;
+    }
+
+    // Radio live stream proxy (fixes mixed-content HTTP streams and missing CORS headers for Web Audio API)
+    if (requestUrl.pathname === '/api/radio/stream' && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        });
+        res.end();
+        return true;
+      }
+      const target = requestUrl.searchParams.get('url') || '';
+      if (!isAllowedAudioUrl(target)) {
+        sendJson(res, 400, { ok: false, error: 'Invalid radio stream URL.' });
+        return true;
+      }
+      await proxyAudioStream(req, res, target);
+      return true;
+    }
+
     if ((requestUrl.pathname === '/api/online/stream' || requestUrl.pathname === '/api/online/download') && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
@@ -1091,8 +1477,8 @@ async function handleApi(req, res) {
         return true;
       }
       const target = requestUrl.searchParams.get('url') || '';
-      if (!isAllowedAudiusUrl(target)) {
-        sendJson(res, 400, { ok: false, error: 'Invalid Audius audio URL.' });
+      if (!isAllowedAudiusUrl(target) && !isAllowedQuranAudioUrl(target) && !isAllowedAudioUrl(target)) {
+        sendJson(res, 400, { ok: false, error: 'Invalid online audio URL.' });
         return true;
       }
       if (requestUrl.pathname === '/api/online/stream') {

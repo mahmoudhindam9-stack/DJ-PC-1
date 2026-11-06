@@ -1,8 +1,10 @@
 {
   "name": "DJ Desktop",
-  "description": "Windows desktop audio player with DJ studio mixer, 10-band equalizer, internet radio, karaoke, and local ACE-Step 1.5 AI music generation.",
+  "description": "Windows desktop audio player with DJ studio mixer, 10-band equalizer, live radio, online music (Arabic, Foreign, Oldies & Classics), Holy Quran (MP3Quran.net), karaoke, and local AI music generation.",
   "requestFramePermissions": [
     "microphone"
   ],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

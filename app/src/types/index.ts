@@ -10,9 +10,11 @@ export interface AudioItem {
   /** Binary audio data for local songs, persisted in IndexedDB. */
   audioBlob?: Blob;
   /** Source metadata for streamed tracks from online providers. */
-  onlineSource?: 'ALBUMATY' | 'AUDIUS';
+  onlineSource?: 'ALBUMATY' | 'AUDIUS' | 'OLDIES' | 'QURAN';
   sourceUrl?: string;
   downloadUri?: string;
+  /** Optional failover stream URLs if primary uri fails to load. */
+  fallbackUris?: string[];
   isFavorite?: boolean;
   playCount?: number;
   lastPlayed?: number;
@@ -38,6 +40,35 @@ export interface RadioStation {
   codec: string;
   bitrate: number;
   countryCode: string;
+}
+
+export interface QuranMoshaf {
+  id: number;
+  name: string;
+  rewayaId?: number;
+  server: string;
+  surahTotal: number;
+  moshafType?: number;
+  surahList: number[];
+}
+
+export interface QuranReciter {
+  id: number;
+  name: string;
+  letter?: string;
+  date?: string;
+  moshaf: QuranMoshaf[];
+}
+
+export interface QuranSurah {
+  id: number;
+  name: string;
+  nameAr?: string;
+  nameEn?: string;
+  startPage?: number;
+  endPage?: number;
+  makkia: boolean;
+  type?: number;
 }
 
 export interface EqualizerBand {
@@ -77,6 +108,7 @@ export type TabType =
   | 'KARAOKE'
   | 'RADIO'
   | 'ONLINE_MUSIC'
+  | 'QURAN'
   | 'AI_STUDIO'
   | 'SETTINGS';
 

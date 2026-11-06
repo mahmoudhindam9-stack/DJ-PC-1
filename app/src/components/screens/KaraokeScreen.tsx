@@ -3,7 +3,6 @@ import {
   Mic,
   MicOff,
   Radio,
-  Settings,
   Circle,
   Square,
   Volume2,
@@ -59,7 +58,6 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
       setSelectedDevice(micEngine.selectedDeviceId);
     });
 
-    // VU meter polling loop
     let animId: number;
     const pollVu = () => {
       if (micEngine.isMicEnabled) {
@@ -116,6 +114,7 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
     { id: 'GIANT', name: 'Giant' },
     { id: 'MONSTER', name: 'Monster' },
   ];
+
   const voiceEffects: Array<{ id: MicVoiceEffectType; name: string; emoji: string }> = [
     { id: 'NONE', name: 'Clean', emoji: '🎙️' },
     { id: 'WOMAN', name: 'Woman Voice', emoji: '👩' },
@@ -129,417 +128,402 @@ export const KaraokeScreen: React.FC<KaraokeScreenProps> = ({ themeColors, isAra
   return (
     <div
       id="karaoke-screen"
-      className="flex-1 flex flex-col h-full overflow-y-auto select-none p-4 space-y-4"
+      className="h-full min-h-0 flex flex-col justify-between overflow-hidden select-none p-3 gap-2.5"
       style={{
         backgroundColor: themeColors.background,
         color: themeColors.textPrimary,
       }}
     >
-      {/* Top Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Mic className="w-6 h-6" style={{ color: themeColors.primary }} />
-          <div>
-            <h1 className="text-lg font-black tracking-wide">
-              {isArabic ? 'استوديو الكاريوكي والصوت المباشر' : 'KARAOKE & LIVE VOCAL STUDIO'}
-            </h1>
-            <p className="text-xs" style={{ color: themeColors.textMuted }}>
-              Real-time Hardware Mic Monitoring, Vocal Effects & Recording
-            </p>
-          </div>
-        </div>
-
-        {/* Input Hardware Selection */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => micEngine.refreshDevices()}
-            className="p-1.5 rounded-xl border hover:bg-white/5"
-            style={{ borderColor: themeColors.border }}
-            title="Refresh Microphones"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-
-          <select
-            value={selectedDevice || ''}
-            onChange={(e) => micEngine.selectDevice(e.target.value || null)}
-            className="px-2.5 py-1.5 rounded-xl border text-xs outline-none max-w-xs truncate"
-            style={{
-              backgroundColor: themeColors.surface,
-              borderColor: themeColors.border,
-              color: themeColors.textPrimary,
-            }}
-          >
-            <option value="">Default System Microphone</option>
-            {devices.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>
-                {d.label || `Microphone ${d.deviceId.substring(0, 5)}`}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Main Live Monitor Hero Card */}
+      {/* Top Header & Mic Controls Bar (No Subtitles) */}
       <div
-        className="p-6 rounded-2xl border shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6"
+        className="rounded-xl p-2.5 border shrink-0 flex flex-wrap items-center justify-between gap-2"
         style={{
           backgroundColor: themeColors.surface,
-          borderColor: isMicEnabled ? themeColors.primary : themeColors.border,
+          borderColor: themeColors.border,
         }}
       >
-        <div className="flex items-center gap-5">
-          {/* Big Mic Toggle Circle */}
-          <button
-            onClick={handleToggleMic}
-            className={`w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-all active:scale-95 ${
-              isMicEnabled ? 'animate-pulse' : ''
-            }`}
-            style={{
-              backgroundColor: isMicEnabled ? themeColors.primary : themeColors.surfaceVariant,
-              color: isMicEnabled ? '#ffffff' : themeColors.textMuted,
-            }}
-            title={isMicEnabled ? 'Mute Microphone' : 'Enable Microphone'}
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: `${themeColors.primary}20` }}
           >
-            {isMicEnabled ? <Mic className="w-9 h-9" /> : <MicOff className="w-9 h-9" />}
-          </button>
-
-          <div>
-            <span
-              className="text-xs font-bold tracking-wider uppercase px-2 py-0.5 rounded"
-              style={{
-                backgroundColor: isMicEnabled ? `${themeColors.primary}25` : themeColors.surfaceVariant,
-                color: isMicEnabled ? themeColors.primary : themeColors.textMuted,
-              }}
-            >
-              {isMicEnabled
-                ? isArabic
-                  ? 'الميكروفون قيد التشغيل المباشر'
-                  : 'LIVE MONITOR ACTIVE'
-                : isArabic
-                ? 'الميكروفون مغلق'
-                : 'MONITOR MUTED'}
-            </span>
-            <h2 className="text-base font-bold mt-1">
-              {isMicEnabled
-                ? isArabic
-                  ? 'الصوت ينتقل مباشرة إلى السماعات'
-                  : 'Vocal signal routed to master output'
-                : isArabic
-                ? 'اضغط على زر الميكروفون للبدء'
-                : 'Click mic icon to activate live feedback'}
-            </h2>
+            <Mic className="w-4 h-4" style={{ color: themeColors.primary }} />
           </div>
+          <h1 className="text-sm font-bold tracking-tight">
+            {isArabic ? 'استوديو الميكروفون والكاريوكي' : 'Microphone & Karaoke Studio'}
+          </h1>
+          <span
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{
+              backgroundColor: isMicEnabled
+                ? 'rgba(16, 185, 129, 0.2)'
+                : themeColors.surfaceVariant,
+              color: isMicEnabled ? '#10b981' : themeColors.textMuted,
+            }}
+          >
+            {isMicEnabled
+              ? isArabic
+                ? 'متصل ومفعل'
+                : 'LIVE ON AIR'
+              : isArabic
+              ? 'متوقف'
+              : 'OFFLINE'}
+          </span>
         </div>
 
-        {/* Live VU Level Meter & Recording Button */}
-        <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
-          {/* VU Level Bar */}
-          <div className="flex items-center gap-2 w-full sm:w-48">
-            <span className="text-[10px] font-mono opacity-60">VU:</span>
-            <div
-              className="flex-1 h-3 rounded-full overflow-hidden border p-0.5"
+        {/* Input Device + Noise Reduction + Power + Record */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <select
+              value={selectedDevice}
+              onChange={(e) => micEngine.setInputDevice(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border text-xs outline-none max-w-[200px]"
+              style={{
+                backgroundColor: themeColors.background,
+                borderColor: themeColors.border,
+                color: themeColors.textPrimary,
+              }}
+            >
+              <option value="default">
+                {isArabic ? 'الميكروفون الافتراضي' : 'Default System Mic'}
+              </option>
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Mic ${d.deviceId.slice(0, 6)}`}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => micEngine.refreshDevices()}
+              className="p-1.5 rounded-lg border"
               style={{
                 backgroundColor: themeColors.surfaceVariant,
                 borderColor: themeColors.border,
               }}
+              title={isArabic ? 'تحديث الأجهزة' : 'Refresh Devices'}
             >
-              <div
-                className="h-full rounded-full transition-all duration-75"
-                style={{
-                  width: `${vuLevel}%`,
-                  backgroundColor:
-                    vuLevel > 80 ? '#ff1744' : vuLevel > 50 ? '#ffab00' : themeColors.primary,
-                }}
-              />
-            </div>
-            <span className="text-[10px] font-mono w-8 text-right opacity-80">{vuLevel}%</span>
-          </div>
-
-          {/* Recording Button */}
-          <div className="flex items-center gap-2">
-            {isRecording && (
-              <span className="text-xs font-mono font-bold text-red-500 animate-pulse">
-                REC {formatTimer(recordingSeconds)}
-              </span>
-            )}
-            <button
-              onClick={handleToggleRecord}
-              disabled={!isMicEnabled}
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
-                !isMicEnabled
-                  ? 'opacity-40 cursor-not-allowed'
-                  : isRecording
-                  ? 'bg-red-500 text-white border-red-400'
-                  : 'hover:bg-white/5'
-              }`}
-              style={{
-                borderColor: isRecording ? '#ff1744' : themeColors.border,
-              }}
-            >
-              {isRecording ? <Square className="w-3.5 h-3.5 fill-current" /> : <Circle className="w-3.5 h-3.5 fill-red-500 text-red-500" />}
-              <span>
-                {isRecording
-                  ? isArabic
-                    ? 'إيقاف وحفظ التسجيل'
-                    : 'Stop & Save'
-                  : isArabic
-                  ? 'بدء تسجيل الأداء'
-                  : 'Record Performance'}
-              </span>
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          <button
+            onClick={() => micEngine.setVoiceProcessing(!voiceProcessing)}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
+            style={{
+              backgroundColor: voiceProcessing
+                ? `${themeColors.primary}20`
+                : themeColors.surfaceVariant,
+              borderColor: voiceProcessing ? themeColors.primary : themeColors.border,
+              color: voiceProcessing ? themeColors.primary : themeColors.textSecondary,
+            }}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {isArabic ? 'عزل الضوضاء' : 'Noise Gate'}
+          </button>
+
+          <button
+            onClick={handleToggleMic}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white transition-all"
+            style={{
+              backgroundColor: isMicEnabled ? '#ef4444' : themeColors.primary,
+            }}
+          >
+            {isMicEnabled ? (
+              <>
+                <MicOff className="w-3.5 h-3.5" />
+                {isArabic ? 'إيقاف المايك' : 'Stop Mic'}
+              </>
+            ) : (
+              <>
+                <Mic className="w-3.5 h-3.5" />
+                {isArabic ? 'تشغيل المايك' : 'Start Mic'}
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleToggleRecord}
+            disabled={!isMicEnabled}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border disabled:opacity-40"
+            style={{
+              backgroundColor: isRecording ? '#ef4444' : themeColors.surfaceVariant,
+              borderColor: isRecording ? '#ef4444' : themeColors.border,
+              color: isRecording ? '#fff' : themeColors.textPrimary,
+            }}
+          >
+            {isRecording ? (
+              <>
+                <Square className="w-3.5 h-3.5 fill-current" />
+                {formatTimer(recordingSeconds)}
+              </>
+            ) : (
+              <>
+                <Circle className="w-3.5 h-3.5 fill-red-500 text-red-500" />
+                {isArabic ? 'تسجيل MP3' : 'Record MP3'}
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Dedicated character voice presets copied from the Android Mic experience. */}
-      <div className="p-4 rounded-2xl border shadow-lg flex flex-col gap-3" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}>
-        <div>
-          <span className="text-xs font-bold tracking-wider opacity-70">{isArabic ? 'تغيير شخصيات الصوت' : 'VOICE CHANGER'}</span>
-          <p className="mt-1 text-[10px] opacity-60">{isArabic ? 'تغيير نبرة المايك مباشرة: امرأة أو طفل أو وحش وغيرها.' : 'Real-time voice character, pitch and tone transformation.'}</p>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-          {voiceEffects.map((effect) => {
-            const selected = voiceEffect === effect.id;
-            return (
-              <button key={effect.id} type="button" onClick={() => micEngine.setVoiceEffect(effect.id)} className="min-w-0 rounded-xl border p-3 flex flex-col items-center gap-1.5 transition-all hover:brightness-110" style={{ borderColor: selected ? themeColors.primary : themeColors.border, backgroundColor: selected ? themeColors.primary + '25' : themeColors.surfaceVariant, boxShadow: selected ? 'inset 0 0 0 1px ' + themeColors.primary : undefined }}>
-                <span className="text-2xl">{effect.emoji}</span>
-                <span className="text-[10px] font-bold text-center leading-tight">{effect.name}</span>
-                <span className="text-[8px] uppercase tracking-wider opacity-60">{selected ? 'ACTIVE' : 'VOICE'}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Vocal Effect Filters Chips */}
+      {/* Live VU Meter Bar */}
       <div
-        className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
+        className="rounded-xl px-3 py-2 border shrink-0 flex items-center gap-3"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
         }}
       >
-        <span className="text-xs font-bold tracking-wider opacity-70">
-          {isArabic ? 'تأثيرات الصوت (VOCAL CHARACTER PRESETS)' : 'VOCAL CHARACTER PRESETS'}
+        <span className="text-xs font-bold shrink-0">
+          {isArabic ? 'مؤشر الإشارة (VU)' : 'Input Level'}
         </span>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-          {filterList.map((f) => {
-            const isSel = currentFilter === f.id;
-            return (
-              <button
-                key={f.id}
-                onClick={() => micEngine.setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-xl font-semibold border whitespace-nowrap transition-all ${
-                  isSel ? 'shadow-sm font-bold' : 'hover:bg-white/5 opacity-70'
-                }`}
+        <div
+          className="flex-1 h-2.5 rounded-full overflow-hidden"
+          style={{ backgroundColor: themeColors.surfaceVariant }}
+        >
+          <div
+            className="h-full rounded-full transition-all duration-75"
+            style={{
+              width: `${Math.min(100, Math.round(vuLevel * 100))}%`,
+              background: 'linear-gradient(90deg, #10b981, #eab308, #ef4444)',
+            }}
+          />
+        </div>
+        <span className="text-xs font-mono font-bold w-10 text-right">
+          {Math.round(vuLevel * 100)}%
+        </span>
+      </div>
+
+      {/* Middle 2-Column Workspace: Left = Voice Changer & Vocal Presets | Right = 5 DSP Sliders */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5 overflow-hidden">
+        {/* Left Column: Voice Effects & Vocal Presets */}
+        <div className="lg:col-span-7 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden">
+          {/* Voice Pitch / Character Changer */}
+          <div
+            className="rounded-xl p-2.5 border shrink-0 flex flex-col gap-2"
+            style={{
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+            }}
+          >
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" style={{ color: themeColors.primary }} />
+              <span className="text-xs font-bold">
+                {isArabic ? 'تغيير طبقات الصوت (Voice Changer)' : 'Live Voice Changer'}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+              {voiceEffects.map((fx) => {
+                const active = voiceEffect === fx.id;
+                return (
+                  <button
+                    key={fx.id}
+                    onClick={() => micEngine.setVoiceEffect(fx.id)}
+                    className="p-1.5 rounded-lg border text-center transition-all flex flex-col items-center justify-center gap-0.5"
+                    style={{
+                      backgroundColor: active
+                        ? themeColors.primary
+                        : themeColors.surfaceVariant,
+                      borderColor: active ? themeColors.primary : themeColors.border,
+                      color: active ? '#fff' : themeColors.textPrimary,
+                    }}
+                  >
+                    <span className="text-sm">{fx.emoji}</span>
+                    <span className="text-[10px] font-bold truncate w-full">{fx.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 19 Studio Vocal Filter Presets */}
+          <div
+            className="flex-1 min-h-0 rounded-xl p-2.5 border flex flex-col justify-between overflow-hidden"
+            style={{
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+            }}
+          >
+            <div className="flex items-center justify-between shrink-0 mb-1.5">
+              <div className="flex items-center gap-1.5">
+                <Radio className="w-4 h-4" style={{ color: themeColors.secondary }} />
+                <span className="text-xs font-bold">
+                  {isArabic ? 'فلاتر الاستوديو الصوتية (19 Preset)' : 'Studio Vocal Filters'}
+                </span>
+              </div>
+              <span
+                className="text-[11px] font-bold px-2 py-0.5 rounded"
                 style={{
-                  backgroundColor: isSel ? themeColors.primary : themeColors.surfaceVariant,
-                  borderColor: isSel ? themeColors.primary : themeColors.border,
-                  color: isSel ? '#ffffff' : themeColors.textPrimary,
+                  backgroundColor: `${themeColors.secondary}20`,
+                  color: themeColors.secondary,
                 }}
               >
-                {f.name}
-              </button>
-            );
-          })}
+                {currentFilter}
+              </span>
+            </div>
+
+            <div className="flex-1 min-h-0 grid grid-cols-4 sm:grid-cols-5 gap-1.5 content-center">
+              {filterList.map((f) => {
+                const active = currentFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => micEngine.setFilter(f.id)}
+                    className="px-2 py-1.5 rounded-lg border text-[11px] font-bold truncate transition-all"
+                    style={{
+                      backgroundColor: active
+                        ? themeColors.secondary
+                        : themeColors.surfaceVariant,
+                      borderColor: active ? themeColors.secondary : themeColors.border,
+                      color: active ? '#fff' : themeColors.textPrimary,
+                    }}
+                  >
+                    {f.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: 5 Live DSP Parameter Sliders */}
+        <div
+          className="lg:col-span-5 rounded-xl p-3 border flex flex-col justify-between min-h-0 overflow-hidden"
+          style={{
+            backgroundColor: themeColors.surface,
+            borderColor: themeColors.border,
+          }}
+        >
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Sliders className="w-4 h-4" style={{ color: themeColors.primary }} />
+            <span className="text-xs font-bold">
+              {isArabic ? 'معالجة الصوت الحية (DSP Rack)' : 'Live Vocal DSP Rack'}
+            </span>
+          </div>
+
+          <div className="flex-1 flex flex-col justify-evenly gap-2 py-1">
+            {[
+              {
+                label: isArabic ? 'مستوى صوت المايك (Mic Gain)' : 'Mic Gain',
+                value: micVolume,
+                max: 2,
+                color: themeColors.primary,
+                onChange: (v: number) => micEngine.setMicVolume(v),
+              },
+              {
+                label: isArabic ? 'الصدى المتكرر (Echo)' : 'Echo Delay',
+                value: echoLevel,
+                max: 1,
+                color: themeColors.secondary,
+                onChange: (v: number) => micEngine.setEchoLevel(v),
+              },
+              {
+                label: isArabic ? 'صدى القاعة (Reverb)' : 'Hall Reverb',
+                value: reverbLevel,
+                max: 1,
+                color: themeColors.tertiary,
+                onChange: (v: number) => micEngine.setReverbLevel(v),
+              },
+              {
+                label: isArabic ? 'تأثير فلانجر (Flanger)' : 'Flanger Mix',
+                value: flangerMix,
+                max: 1,
+                color: themeColors.accentA,
+                onChange: (v: number) => micEngine.setFlangerMix(v),
+              },
+              {
+                label: isArabic ? 'قوة الفلتر (Filter Mix)' : 'Filter Wet/Dry',
+                value: filterMix,
+                max: 1,
+                color: themeColors.accentB,
+                onChange: (v: number) => micEngine.setFilterMix(v),
+              },
+            ].map((ctrl) => (
+              <div key={ctrl.label} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold">{ctrl.label}</span>
+                  <span className="font-mono font-bold" style={{ color: ctrl.color }}>
+                    {Math.round((ctrl.value / ctrl.max) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={ctrl.max}
+                  step={0.01}
+                  value={ctrl.value}
+                  onChange={(e) => ctrl.onChange(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+                  style={{
+                    accentColor: ctrl.color,
+                    backgroundColor: themeColors.surfaceVariant,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* DSP Mixing Sliders: Mic Volume, Echo, Reverb, Flanger */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Mic Volume */}
-        <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: themeColors.border,
-          }}
-        >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1">
-              <Volume2 className="w-3.5 h-3.5" style={{ color: themeColors.primary }} />
-              {isArabic ? 'مستوى صوت المايك' : 'MIC GAIN'}
-            </span>
-            <span className="font-mono">{Math.round(micVolume * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={2.0}
-            step={0.05}
-            value={micVolume}
-            onChange={(e) => micEngine.setMicVolume(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
-            style={{
-              accentColor: themeColors.primary,
-              backgroundColor: themeColors.surfaceVariant,
-            }}
-          />
-        </div>
-
-        {/* Echo Level */}
-        <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: themeColors.border,
-          }}
-        >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: themeColors.secondary }} />
-              {isArabic ? 'صدى الصوت (ECHO)' : 'ECHO DELAY'}
-            </span>
-            <span className="font-mono">{Math.round(echoLevel * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={1.0}
-            step={0.01}
-            value={echoLevel}
-            onChange={(e) => micEngine.setEchoLevel(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
-            style={{
-              accentColor: themeColors.secondary,
-              backgroundColor: themeColors.surfaceVariant,
-            }}
-          />
-        </div>
-
-        {/* Reverb Level */}
-        <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: themeColors.border,
-          }}
-        >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: themeColors.tertiary }} />
-              {isArabic ? 'تردد الغرفة (REVERB)' : 'CONVOLUTION REVERB'}
-            </span>
-            <span className="font-mono">{Math.round(reverbLevel * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={1.0}
-            step={0.01}
-            value={reverbLevel}
-            onChange={(e) => micEngine.setReverbLevel(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
-            style={{
-              accentColor: themeColors.tertiary,
-              backgroundColor: themeColors.surfaceVariant,
-            }}
-          />
-        </div>
-
-        {/* Flanger Mix */}
-        <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: themeColors.border,
-          }}
-        >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1">
-              <Sliders className="w-3.5 h-3.5" style={{ color: themeColors.accentB }} />
-              {isArabic ? 'تأثير الفلانجر (FLANGER)' : 'FLANGER MIX'}
-            </span>
-            <span className="font-mono">{Math.round(flangerMix * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={1.0}
-            step={0.01}
-            value={flangerMix}
-            onChange={(e) => micEngine.setFlangerMix(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
-            style={{
-              accentColor: themeColors.accentB,
-              backgroundColor: themeColors.surfaceVariant,
-            }}
-          />
-        </div>
-
-        {/* Filter Mix */}
-        <div className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border }}>
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1"><Sliders className="w-3.5 h-3.5" style={{ color: themeColors.primary }} />{isArabic ? 'مزج الفلتر' : 'FILTER MIX'}</span>
-            <span className="font-mono">{Math.round(filterMix * 100)}%</span>
-          </div>
-          <input type="range" min={0} max={1} step={0.01} value={filterMix} onChange={(e) => micEngine.setFilterMix(Number(e.target.value))} className="w-full h-2 rounded appearance-none cursor-pointer" style={{ accentColor: themeColors.primary, backgroundColor: themeColors.surfaceVariant }} />
-        </div>
-      </div>
-
-      {/* Beat FX & Voice Processing Toggles */}
+      {/* Bottom Beat FX Bar */}
       <div
-        className="p-4 rounded-2xl border shadow-lg flex flex-wrap items-center justify-between gap-4"
+        className="rounded-xl p-2.5 border shrink-0 flex flex-wrap items-center justify-between gap-3"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
         }}
       >
-        {/* BPM & Division */}
-        <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => micEngine.setBeatFxEnabled(!beatFxEnabled)} className="px-3 py-2 rounded-xl text-xs font-black border" style={{ borderColor: beatFxEnabled ? themeColors.primary : themeColors.border, backgroundColor: beatFxEnabled ? themeColors.primary + '24' : themeColors.surfaceVariant, color: beatFxEnabled ? themeColors.primary : themeColors.textMuted }}>
-            {isArabic ? (beatFxEnabled ? 'مؤثر الإيقاع: يعمل' : 'مؤثر الإيقاع: متوقف') : (beatFxEnabled ? 'BEAT FX: ON' : 'BEAT FX: OFF')}
+        <div className="flex items-center gap-2">
+          <Volume2 className="w-4 h-4" style={{ color: themeColors.primary }} />
+          <span className="text-xs font-bold">
+            {isArabic ? 'مزامنة الصدى مع الإيقاع (Beat FX)' : 'Beat FX Tempo Sync'}
+          </span>
+          <button
+            onClick={() => micEngine.setBeatFxEnabled(!beatFxEnabled)}
+            className="px-2.5 py-1 rounded-lg text-xs font-bold"
+            style={{
+              backgroundColor: beatFxEnabled
+                ? themeColors.primary
+                : themeColors.surfaceVariant,
+              color: beatFxEnabled ? '#fff' : themeColors.textMuted,
+            }}
+          >
+            {beatFxEnabled ? 'SYNC ON' : 'SYNC OFF'}
           </button>
-          <span className="text-xs font-bold opacity-70">BEAT SYNC:</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono">{bpm} BPM</span>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold">{bpm} BPM</span>
             <input
               type="range"
-              min={70}
+              min={60}
               max={180}
               value={bpm}
               onChange={(e) => micEngine.setBpm(Number(e.target.value))}
-              className="w-24 h-1.5 rounded appearance-none cursor-pointer"
-              style={{
-                accentColor: themeColors.primary,
-                backgroundColor: themeColors.surfaceVariant,
-              }}
+              className="w-28 h-1.5 rounded-lg appearance-none cursor-pointer"
+              style={{ accentColor: themeColors.primary }}
             />
           </div>
 
           <div className="flex items-center gap-1">
-            {(['1/1', '1/2', '1/4', '1/8', '3/4'] as BeatFxDivision[]).map((d) => (
+            {(['1/1', '3/4', '1/2', '1/4', '1/8'] as BeatFxDivision[]).map((div) => (
               <button
-                key={d}
-                onClick={() => micEngine.setBeatDivision(d)}
-                className={`px-2 py-1 rounded text-[11px] font-mono font-bold border ${
-                  beatDivision === d ? 'shadow-sm' : 'opacity-60'
-                }`}
+                key={div}
+                onClick={() => micEngine.setBeatDivision(div)}
+                className="px-2 py-1 rounded text-xs font-mono font-bold border"
                 style={{
-                  backgroundColor: beatDivision === d ? themeColors.primary : 'transparent',
-                  borderColor: beatDivision === d ? themeColors.primary : themeColors.border,
-                  color: beatDivision === d ? '#ffffff' : themeColors.textPrimary,
+                  backgroundColor:
+                    beatDivision === div ? themeColors.primary : themeColors.surfaceVariant,
+                  borderColor:
+                    beatDivision === div ? themeColors.primary : themeColors.border,
+                  color: beatDivision === div ? '#fff' : themeColors.textPrimary,
                 }}
               >
-                {d}
+                {div}
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Acoustic Echo Cancellation & Noise Suppression */}
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 cursor-pointer text-xs">
-            <input
-              type="checkbox"
-              checked={voiceProcessing}
-              onChange={(e) => micEngine.toggleVoiceProcessing(e.target.checked)}
-              className="rounded"
-              style={{ accentColor: themeColors.primary }}
-            />
-            <span>{isArabic ? 'إلغاء الصدى والضجيج التلقائي (AEC)' : 'Hardware Echo & Noise Suppression'}</span>
-          </label>
         </div>
       </div>
     </div>

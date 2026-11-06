@@ -194,9 +194,6 @@ export const AIMusicStudioScreen: React.FC<AIMusicStudioScreenProps> = ({
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight">{isArabic ? 'استوديو الموسيقى بالذكاء الاصطناعي' : 'AI Music Studio'}</h1>
                 <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wider" style={{ backgroundColor: panel, color: accent }}>ACE-Step 1.5 · LOCAL AI</span>
               </div>
-              <p className="mt-2 max-w-3xl text-xs leading-relaxed" style={{ color: muted }}>
-                {isArabic ? 'حوّل وصفك إلى موسيقى ستيريو، واختر النوع والمزاج والسرعة والغناء. استمع واحفظ النتيجة أو أرسلها إلى Deck A أو Deck B.' : 'Turn a musical idea into stereo audio. Shape genre, mood, tempo and vocals, then preview, save, or send it to Deck A or Deck B.'}
-              </p>
               <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-semibold">
                 <span className="rounded-lg border px-2.5 py-1.5 flex items-center gap-1.5" style={{ borderColor: border }}><Headphones className="w-3.5 h-3.5" />{isArabic ? 'صوت ستيريو' : 'Stereo audio'}</span>
                 <span className="rounded-lg border px-2.5 py-1.5 flex items-center gap-1.5" style={{ borderColor: border }}><Clock3 className="w-3.5 h-3.5" />{durationSeconds + ' sec'}</span>
@@ -217,11 +214,6 @@ export const AIMusicStudioScreen: React.FC<AIMusicStudioScreenProps> = ({
                   {checkingEngine ? (isArabic ? 'فحص...' : 'CHECKING…') : localEngineReady ? 'READY' : (isArabic ? 'غير مشغّل' : 'OFFLINE')}
                 </span>
               </div>
-              <p className="text-[10px] leading-relaxed" style={{ color: muted }}>
-                {isArabic
-                  ? 'مجاني ومفتوح المصدر. أول تشغيل يحتاج الإنترنت لتنزيل البرنامج والأوزان؛ بعد اكتمال التنزيل يمكن توليد الموسيقى دون اتصال أو مفتاح API. يعمل على CPU أيضًا ولكن أبطأ.'
-                  : 'Free, open-source local music generation. Internet is needed once to download its runtime and weights; after that it can generate offline with no API key. CPU works too, but more slowly.'}
-              </p>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => { void handleStartLocalEngine(); }} disabled={checkingEngine || startingEngine || localEngineReady} className="rounded-lg px-3 py-2 text-[10px] font-black text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
                   {startingEngine ? (isArabic ? 'جاري التجهيز...' : 'Starting…') : localEngineReady ? (isArabic ? 'المحرك جاهز' : 'Engine ready') : (isArabic ? 'تجهيز / تشغيل النموذج المحلي' : 'Set up / start local model')}

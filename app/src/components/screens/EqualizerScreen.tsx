@@ -3,7 +3,6 @@ import {
   Sliders,
   Power,
   RotateCcw,
-  Save,
   Download,
   Upload,
   Sparkles,
@@ -35,7 +34,6 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Load custom presets and active EQ settings from persistent storage
   useEffect(() => {
     let mounted = true;
 
@@ -86,7 +84,6 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
     };
   }, []);
 
-  // Helper to persist active EQ settings
   const persistActiveState = (
     currentBands: EqualizerBand[],
     preset: string,
@@ -152,7 +149,9 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
     }
 
     persistActiveState(updated, preset.name, eqEnabled, nextBass, nextTreble, nextPreamp);
-    setStatusMessage(isArabic ? `تم تفعيل الإعداد: ${preset.name}` : `Activated preset: ${preset.name}`);
+    setStatusMessage(
+      isArabic ? `تم تفعيل الإعداد: ${preset.name}` : `Activated preset: ${preset.name}`
+    );
     setTimeout(() => setStatusMessage(null), 3000);
   };
 
@@ -181,7 +180,6 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
     persistActiveState(bands, selectedPreset, eqEnabled, bassBoost, trebleBoost, v);
   };
 
-  // Save Current EQ as Custom Preset
   const handleSaveCustomPreset = async () => {
     const trimmed = customPresetName.trim();
     if (!trimmed) return;
@@ -203,16 +201,20 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
       persistActiveState(bands, newPreset.name, eqEnabled, bassBoost, trebleBoost, preampDb);
       setShowSaveDialog(false);
       setCustomPresetName('');
-      setStatusMessage(isArabic ? `تم حفظ الإعداد "${trimmed}" بنجاح!` : `Preset "${trimmed}" saved!`);
+      setStatusMessage(
+        isArabic ? `تم حفظ الإعداد "${trimmed}" بنجاح!` : `Preset "${trimmed}" saved!`
+      );
       setTimeout(() => setStatusMessage(null), 3500);
-    } catch (err) {
-      console.error('Failed to save custom preset:', err);
+    } catch {
       setStatusMessage(isArabic ? 'تعذر حفظ الإعداد.' : 'Could not save preset.');
     }
   };
 
-  // Delete Custom Preset
-  const handleDeleteCustomPreset = async (e: React.MouseEvent, id: string, name: string) => {
+  const handleDeleteCustomPreset = async (
+    e: React.MouseEvent,
+    id: string,
+    name: string
+  ) => {
     e.stopPropagation();
     try {
       await db.deleteCustomPreset(id);
@@ -221,14 +223,15 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
       if (selectedPreset === name) {
         setSelectedPreset('Custom');
       }
-      setStatusMessage(isArabic ? `تم حذف الإعداد "${name}".` : `Deleted preset "${name}".`);
+      setStatusMessage(
+        isArabic ? `تم حذف الإعداد "${name}".` : `Deleted preset "${name}".`
+      );
       setTimeout(() => setStatusMessage(null), 3000);
-    } catch (err) {
-      console.error('Failed to delete custom preset:', err);
+    } catch {
+      // ignore
     }
   };
 
-  // Export JSON preset
   const handleExportJson = () => {
     const data = {
       presetName: selectedPreset,
@@ -246,7 +249,6 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
     URL.revokeObjectURL(url);
   };
 
-  // Import JSON preset
   const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -258,24 +260,36 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
           mainAudioEngine.applyCustomBands(json.bands);
           const updated = [...mainAudioEngine.getBands()];
           setBands(updated);
+          const nextBass = typeof json.bassBoost === 'number' ? json.bassBoost : bassBoost;
+          const nextTreble =
+            typeof json.trebleBoost === 'number' ? json.trebleBoost : trebleBoost;
+          const nextPreamp = typeof json.preampDb === 'number' ? json.preampDb : preampDb;
+          const nextPresetName = json.presetName || 'Imported';
+
+          if (typeof json.bassBoost === 'number') {
+            setBassBoost(json.bassBoost);
+            mainAudioEngine.setBassBoostLevel(json.bassBoost);
+          }
+          if (typeof json.trebleBoost === 'number') {
+            setTrebleBoost(json.trebleBoost);
+            mainAudioEngine.setTrebleBoostLevel(json.trebleBoost);
+          }
+          if (typeof json.preampDb === 'number') {
+            setPreampDb(json.preampDb);
+            mainAudioEngine.setPreampDb(json.preampDb);
+          }
+          setSelectedPreset(nextPresetName);
+          persistActiveState(
+            updated,
+            nextPresetName,
+            eqEnabled,
+            nextBass,
+            nextTreble,
+            nextPreamp
+          );
         }
-        if (typeof json.bassBoost === 'number') handleBassBoostChange(json.bassBoost);
-        if (typeof json.trebleBoost === 'number') handleTrebleBoostChange(json.trebleBoost);
-        if (typeof json.preampDb === 'number') handlePreampChange(json.preampDb);
-        const name = json.presetName || 'Imported';
-        setSelectedPreset(name);
-        persistActiveState(
-          mainAudioEngine.getBands(),
-          name,
-          eqEnabled,
-          typeof json.bassBoost === 'number' ? json.bassBoost : bassBoost,
-          typeof json.trebleBoost === 'number' ? json.trebleBoost : trebleBoost,
-          typeof json.preampDb === 'number' ? json.preampDb : preampDb
-        );
-        setStatusMessage(isArabic ? `تم استيراد الإعداد: ${name}` : `Imported preset: ${name}`);
-        setTimeout(() => setStatusMessage(null), 3000);
-      } catch (err) {
-        console.error('Failed to parse EQ JSON:', err);
+      } catch {
+        // ignore invalid file
       }
     };
     reader.readAsText(file);
@@ -283,260 +297,344 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
 
   return (
     <div
-      id="equalizer-screen"
-      className="flex-1 flex flex-col h-full overflow-y-auto select-none p-4 space-y-4"
-      style={{
-        backgroundColor: themeColors.background,
-        color: themeColors.textPrimary,
-      }}
+      className="h-full min-h-0 flex flex-col justify-between overflow-hidden p-3 gap-2.5 select-none"
+      style={{ color: themeColors.textPrimary }}
     >
-      {/* Header with Master Switch & Quick Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Sliders className="w-6 h-6" style={{ color: themeColors.primary }} />
-          <div>
-            <h1 className="text-lg font-black tracking-wide">
-              {isArabic ? 'المعادل الصوتي الاحترافي' : '10-BAND STUDIO EQUALIZER'}
-            </h1>
-            <p className="text-xs" style={{ color: themeColors.textMuted }}>
-              {isArabic
-                ? 'تحكم كامل بـ 10 ترددات، مضخم Bass و Treble، وحفظ التعديلات المخصصة تلقائياً'
-                : '10-Band EQ, Bass/Treble boost, and automatic persistent custom adjustments'}
-            </p>
+      {/* Top Control Header (No Subtitles) */}
+      <div
+        className="rounded-xl p-2.5 border shrink-0 flex flex-wrap items-center justify-between gap-2"
+        style={{
+          backgroundColor: themeColors.surface,
+          borderColor: themeColors.border,
+        }}
+      >
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: `${themeColors.primary}20` }}
+          >
+            <Sliders className="w-4 h-4" style={{ color: themeColors.primary }} />
           </div>
+          <h1 className="text-sm font-bold tracking-tight">
+            {isArabic ? 'معادل الصوت الاحترافي' : 'Pro Studio Equalizer'}
+          </h1>
+          {statusMessage && (
+            <span
+              className="text-xs px-2 py-0.5 rounded-md font-semibold"
+              style={{
+                backgroundColor: `${themeColors.primary}20`,
+                color: themeColors.primary,
+              }}
+            >
+              {statusMessage}
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Master Enable/Bypass Switch */}
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
-            onClick={handleToggleEq}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all shadow-sm ${
-              eqEnabled ? 'hover:brightness-110' : 'opacity-60'
-            }`}
+            onClick={() => setShowSaveDialog((prev) => !prev)}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
             style={{
-              backgroundColor: eqEnabled ? themeColors.primary : themeColors.surfaceVariant,
-              borderColor: eqEnabled ? themeColors.primary : themeColors.border,
-              color: eqEnabled ? '#ffffff' : themeColors.textPrimary,
+              backgroundColor: showSaveDialog
+                ? `${themeColors.primary}20`
+                : themeColors.surfaceVariant,
+              borderColor: showSaveDialog ? themeColors.primary : themeColors.border,
+              color: showSaveDialog ? themeColors.primary : themeColors.textPrimary,
             }}
           >
-            <Power className="w-4 h-4" />
-            <span>{eqEnabled ? (isArabic ? 'المعادل مفعّل' : 'DSP ACTIVE') : (isArabic ? 'معطل' : 'BYPASS')}</span>
+            <BookmarkPlus className="w-3.5 h-3.5" />
+            {isArabic ? 'حفظ' : 'Save Preset'}
           </button>
 
-          {/* Save Custom Preset Button */}
-          <button
-            onClick={() => setShowSaveDialog(true)}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border hover:brightness-110 transition-all shadow-sm"
-            style={{
-              backgroundColor: `${themeColors.primary}20`,
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-            }}
-            title={isArabic ? 'حفظ التعديلات كإعداد مسبق مخصص' : 'Save current settings as custom preset'}
-          >
-            <Save className="w-4 h-4" />
-            <span>{isArabic ? 'حفظ التعديل' : 'Save Preset'}</span>
-          </button>
-
-          {/* Reset button */}
           <button
             onClick={handleReset}
-            className="p-1.5 rounded-xl border hover:bg-white/5 transition-colors"
-            style={{ borderColor: themeColors.border }}
-            title={isArabic ? 'إعادة ضبط للافتراضي (Flat)' : 'Reset to Flat'}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5" />
+            {isArabic ? 'تصفير' : 'Reset'}
           </button>
 
-          {/* Export / Import JSON */}
           <button
             onClick={handleExportJson}
-            className="p-1.5 rounded-xl border hover:bg-white/5 transition-colors"
-            style={{ borderColor: themeColors.border }}
-            title={isArabic ? 'تصدير الإعداد (JSON)' : 'Export EQ Preset (JSON)'}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
+            {isArabic ? 'تصدير' : 'Export'}
           </button>
 
           <label
-            className="p-1.5 rounded-xl border hover:bg-white/5 transition-colors cursor-pointer"
-            style={{ borderColor: themeColors.border }}
-            title={isArabic ? 'استيراد إعداد (JSON)' : 'Import EQ Preset (JSON)'}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 cursor-pointer"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
           >
-            <Upload className="w-4 h-4" />
-            <input type="file" accept=".json" className="hidden" onChange={handleImportJson} />
+            <Upload className="w-3.5 h-3.5" />
+            {isArabic ? 'استيراد' : 'Import'}
+            <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
           </label>
+
+          <button
+            onClick={handleToggleEq}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5"
+            style={{
+              backgroundColor: eqEnabled ? themeColors.primary : themeColors.surfaceVariant,
+              color: eqEnabled ? '#ffffff' : themeColors.textMuted,
+            }}
+          >
+            <Power className="w-3.5 h-3.5" />
+            {eqEnabled ? 'ON' : 'OFF'}
+          </button>
         </div>
       </div>
 
-      <div className="rounded-xl border px-3 py-2.5 text-xs leading-relaxed" style={{ borderColor: themeColors.primary + '75', backgroundColor: themeColors.primary + '10', color: themeColors.textSecondary }}>
-        {isArabic
-          ? 'المعادل موحّد لكل مخارج الصوت: المشغل الرئيسي، ديكا DJ، المايك، السامبلر، والراديو والموسيقى الأونلاين.'
-          : 'Global EQ applies to every output: Main Player, both DJ decks, microphone, sampler, Radio and Online Music.'}
-      </div>
-
-      {/* Status banner */}
-      {statusMessage && (
+      {/* Inline Save Preset Bar */}
+      {showSaveDialog && (
         <div
-          role="status"
-          className="rounded-xl border p-2.5 text-xs flex items-center gap-2 animate-fadeIn"
+          className="rounded-xl p-2.5 border flex items-center gap-2 shrink-0"
           style={{
+            backgroundColor: themeColors.surface,
             borderColor: themeColors.primary,
-            backgroundColor: `${themeColors.primary}15`,
-            color: themeColors.textPrimary,
           }}
         >
-          <Check className="w-4 h-4 text-green-400 shrink-0" />
-          <span>{statusMessage}</span>
+          <input
+            type="text"
+            value={customPresetName}
+            onChange={(e) => setCustomPresetName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSaveCustomPreset()}
+            placeholder={isArabic ? 'اسم الإعداد المخصص...' : 'Custom preset name...'}
+            className="flex-1 px-3 py-1.5 rounded-lg border text-xs outline-none"
+            style={{
+              backgroundColor: themeColors.background,
+              borderColor: themeColors.border,
+              color: themeColors.textPrimary,
+            }}
+            autoFocus
+          />
+          <button
+            onClick={handleSaveCustomPreset}
+            disabled={!customPresetName.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1 disabled:opacity-40"
+            style={{ backgroundColor: themeColors.primary }}
+          >
+            <Check className="w-3.5 h-3.5" />
+            {isArabic ? 'تأكيد' : 'Confirm'}
+          </button>
+          <button
+            onClick={() => setShowSaveDialog(false)}
+            className="p-1.5 rounded-lg border"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Presets List (Built-in + Custom Presets) */}
+      {/* Presets Strip */}
       <div
-        className="p-3.5 rounded-2xl border shadow-lg flex flex-col gap-2"
+        className="rounded-xl p-2 border shrink-0 flex flex-wrap items-center gap-1.5"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
         }}
       >
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold tracking-wider opacity-70">
-            {isArabic ? 'الإعدادات المسبقة والمخصصة' : 'EQ PRESETS & CUSTOM PRESETS'}
+        {Object.keys(BUILTIN_PRESETS).map((preset) => {
+          const isSelected = selectedPreset === preset;
+          return (
+            <button
+              key={preset}
+              onClick={() => handlePresetSelect(preset)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border"
+              style={{
+                backgroundColor: isSelected
+                  ? themeColors.primary
+                  : themeColors.surfaceVariant,
+                borderColor: isSelected ? themeColors.primary : themeColors.border,
+                color: isSelected ? '#ffffff' : themeColors.textPrimary,
+              }}
+            >
+              {preset}
+            </button>
+          );
+        })}
+
+        {customPresets.map((preset) => {
+          const isSelected = selectedPreset === preset.name;
+          return (
+            <div
+              key={preset.id}
+              onClick={() => handleCustomPresetSelect(preset)}
+              className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer"
+              style={{
+                backgroundColor: isSelected
+                  ? themeColors.secondary
+                  : themeColors.surfaceVariant,
+                borderColor: isSelected ? themeColors.secondary : themeColors.border,
+                color: isSelected ? '#ffffff' : themeColors.textPrimary,
+              }}
+            >
+              <span>{preset.name}</span>
+              <button
+                onClick={(e) => handleDeleteCustomPreset(e, preset.id, preset.name)}
+                className="p-0.5 rounded hover:bg-black/20"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 10-Band Vertical Sliders (Flexible Middle Section) */}
+      <div
+        className="flex-1 min-h-0 rounded-xl p-3 border flex flex-col justify-between overflow-hidden"
+        style={{
+          backgroundColor: themeColors.surface,
+          borderColor: themeColors.border,
+          opacity: eqEnabled ? 1 : 0.5,
+        }}
+      >
+        <div className="flex items-center justify-between shrink-0 mb-1">
+          <span className="text-xs font-bold">
+            {isArabic ? 'نطاقات التردد (10-Band EQ)' : 'Frequency Bands (10-Band EQ)'}
           </span>
-          <span className="text-[11px] font-mono opacity-60">
-            {customPresets.length} {isArabic ? 'إعداد خاص' : 'custom'}
-          </span>
+          <span className="text-[11px] font-mono opacity-60">-15 dB — +15 dB</span>
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          {/* Custom Presets first with custom highlight */}
-          {customPresets.map((cp) => {
-            const isSelected = selectedPreset === cp.name;
+        <div className="flex-1 min-h-0 grid grid-cols-10 gap-2 items-center py-1">
+          {bands.map((band) => {
+            const pct = ((band.currentLevelDb + 15) / 30) * 100;
             return (
               <div
-                key={cp.id}
-                className="relative inline-flex items-center group shrink-0"
+                key={band.id}
+                className="h-full flex flex-col items-center justify-between gap-1"
               >
-                <button
-                  onClick={() => handleCustomPresetSelect(cp)}
-                  className={`px-3 py-1.5 rounded-xl whitespace-nowrap font-bold border transition-all flex items-center gap-1.5 ${
-                    isSelected ? 'shadow-sm ring-1' : 'hover:bg-white/5 opacity-80'
-                  }`}
+                <span
+                  className="text-[10px] font-mono font-bold"
                   style={{
-                    backgroundColor: isSelected ? themeColors.primary : `${themeColors.primary}15`,
-                    borderColor: themeColors.primary,
-                    color: isSelected ? '#ffffff' : themeColors.textPrimary,
+                    color:
+                      band.currentLevelDb > 0
+                        ? themeColors.primary
+                        : band.currentLevelDb < 0
+                        ? themeColors.secondary
+                        : themeColors.textMuted,
                   }}
-                  title={isArabic ? `إعداد مخصص: ${cp.name}` : `Custom preset: ${cp.name}`}
                 >
-                  <Sparkles className="w-3 h-3 shrink-0" />
-                  <span>{cp.name}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteCustomPreset(e, cp.id, cp.name)}
-                  className="p-1 ml-1 rounded-lg hover:bg-red-500/20 text-red-400 opacity-60 hover:opacity-100 transition-opacity"
-                  title={isArabic ? 'حذف هذا الإعداد' : 'Delete this custom preset'}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            );
-          })}
+                  {band.currentLevelDb > 0
+                    ? `+${band.currentLevelDb.toFixed(1)}`
+                    : band.currentLevelDb.toFixed(1)}
+                </span>
 
-          {/* Built-in Presets */}
-          {Object.keys(BUILTIN_PRESETS).map((pName) => {
-            const isSelected = selectedPreset === pName;
-            return (
-              <button
-                key={pName}
-                onClick={() => handlePresetSelect(pName)}
-                className={`px-3 py-1.5 rounded-xl whitespace-nowrap font-semibold border transition-all shrink-0 ${
-                  isSelected ? 'shadow-sm' : 'hover:bg-white/5 opacity-70'
-                }`}
-                style={{
-                  backgroundColor: isSelected ? themeColors.primary : themeColors.surfaceVariant,
-                  borderColor: isSelected ? themeColors.primary : themeColors.border,
-                  color: isSelected ? '#ffffff' : themeColors.textPrimary,
-                }}
-              >
-                {pName}
-              </button>
+                <div className="relative flex-1 min-h-[80px] w-7 flex items-center justify-center">
+                  <div
+                    className="w-2 h-full rounded-full overflow-hidden relative"
+                    style={{ backgroundColor: themeColors.surfaceVariant }}
+                  >
+                    <div
+                      className="absolute bottom-0 left-0 right-0 rounded-full transition-all"
+                      style={{
+                        height: `${pct}%`,
+                        background: `linear-gradient(to top, ${themeColors.primary}, ${themeColors.secondary})`,
+                      }}
+                    />
+                  </div>
+
+                  <input
+                    type="range"
+                    min={-15}
+                    max={15}
+                    step={0.5}
+                    disabled={!eqEnabled}
+                    value={band.currentLevelDb}
+                    onChange={(e) => handleBandChange(band.id, Number(e.target.value))}
+                    className="absolute w-28 h-7 -rotate-90 opacity-0 cursor-pointer"
+                  />
+                </div>
+
+                <span
+                  className="text-[10px] font-semibold"
+                  style={{ color: themeColors.textSecondary }}
+                >
+                  {band.name}
+                </span>
+              </div>
             );
           })}
         </div>
       </div>
 
-      {/* 10 Vertical Bands Card */}
-      <div
-        className={`p-6 rounded-2xl border shadow-xl flex flex-col transition-opacity ${
-          eqEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'
-        }`}
-        style={{
-          backgroundColor: themeColors.surface,
-          borderColor: themeColors.border,
-        }}
-      >
-        <div className="flex justify-between items-center mb-6">
-          <span className="text-xs font-bold tracking-wider opacity-60">
-            FREQUENCY RESPONSE (-12 dB ~ +12 dB)
-          </span>
-          <span className="text-xs font-mono font-bold" style={{ color: themeColors.primary }}>
-            {selectedPreset}
-          </span>
-        </div>
-
-        {/* Sliders Container */}
-        <div className="grid grid-cols-10 gap-2 sm:gap-4 items-end h-56 pb-2">
-          {bands.map((band) => (
-            <div key={band.id} className="flex flex-col items-center h-full justify-between">
-              {/* Current dB level */}
-              <span className="text-[10px] font-mono font-bold opacity-80 h-4">
-                {band.currentLevelDb > 0 ? `+${band.currentLevelDb}` : band.currentLevelDb}
-              </span>
-
-              {/* Vertical Slider */}
-              <div className="relative flex-1 flex items-center justify-center my-2">
-                <input
-                  type="range"
-                  min={-12}
-                  max={12}
-                  step={1}
-                  value={band.currentLevelDb}
-                  onChange={(e) => handleBandChange(band.id, Number(e.target.value))}
-                  className="w-36 h-2 rounded-lg appearance-none cursor-pointer transform -rotate-90 origin-center"
-                  style={{
-                    accentColor: themeColors.primary,
-                    backgroundColor: themeColors.surfaceVariant,
-                  }}
-                />
-              </div>
-
-              {/* Frequency Label */}
-              <span className="text-[10px] font-semibold text-center opacity-70 whitespace-nowrap">
-                {band.name}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Audio Enhancers (Bass Boost, Treble Boost, Preamp Gain) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Bass Boost */}
+      {/* Bottom 3-Column Enhancers Row */}
+      <div className="grid grid-cols-3 gap-2.5 shrink-0">
+        {/* Preamp */}
         <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
+          className="rounded-xl p-2.5 border flex flex-col gap-1.5"
           style={{
             backgroundColor: themeColors.surface,
             borderColor: themeColors.border,
           }}
         >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: themeColors.primary }} />
-              {isArabic ? 'تضخيم الباس (BASS BOOST)' : 'BASS BOOST'}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Volume2 className="w-4 h-4" style={{ color: themeColors.primary }} />
+              <span className="font-bold text-xs">
+                {isArabic ? 'مضخم أولي (Preamp)' : 'Preamp Gain'}
+              </span>
+            </div>
+            <span
+              className="text-xs font-mono font-bold"
+              style={{ color: themeColors.primary }}
+            >
+              {preampDb > 0 ? `+${preampDb}` : preampDb} dB
             </span>
-            <span className="font-mono">{Math.round(bassBoost * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min={-12}
+            max={12}
+            step={0.5}
+            value={preampDb}
+            onChange={(e) => handlePreampChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+            style={{
+              accentColor: themeColors.primary,
+              backgroundColor: themeColors.surfaceVariant,
+            }}
+          />
+        </div>
+
+        {/* Bass Boost */}
+        <div
+          className="rounded-xl p-2.5 border flex flex-col gap-1.5"
+          style={{
+            backgroundColor: themeColors.surface,
+            borderColor: themeColors.border,
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" style={{ color: themeColors.secondary }} />
+              <span className="font-bold text-xs">
+                {isArabic ? 'تعزيز الباص (Bass)' : 'Bass Boost'}
+              </span>
+            </div>
+            <span
+              className="text-xs font-mono font-bold"
+              style={{ color: themeColors.secondary }}
+            >
+              {Math.round(bassBoost * 100)}%
+            </span>
           </div>
           <input
             type="range"
@@ -545,9 +643,9 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
             step={0.01}
             value={bassBoost}
             onChange={(e) => handleBassBoostChange(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
+            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
             style={{
-              accentColor: themeColors.primary,
+              accentColor: themeColors.secondary,
               backgroundColor: themeColors.surfaceVariant,
             }}
           />
@@ -555,18 +653,25 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
 
         {/* Treble Boost */}
         <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
+          className="rounded-xl p-2.5 border flex flex-col gap-1.5"
           style={{
             backgroundColor: themeColors.surface,
             borderColor: themeColors.border,
           }}
         >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: themeColors.secondary }} />
-              {isArabic ? 'وضوح الصوت الحاد (TREBLE)' : 'TREBLE BOOST'}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" style={{ color: themeColors.tertiary }} />
+              <span className="font-bold text-xs">
+                {isArabic ? 'تعزيز التريبل (Treble)' : 'Treble Clarity'}
+              </span>
+            </div>
+            <span
+              className="text-xs font-mono font-bold"
+              style={{ color: themeColors.tertiary }}
+            >
+              {Math.round(trebleBoost * 100)}%
             </span>
-            <span className="font-mono">{Math.round(trebleBoost * 100)}%</span>
           </div>
           <input
             type="range"
@@ -575,37 +680,7 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
             step={0.01}
             value={trebleBoost}
             onChange={(e) => handleTrebleBoostChange(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
-            style={{
-              accentColor: themeColors.secondary,
-              backgroundColor: themeColors.surfaceVariant,
-            }}
-          />
-        </div>
-
-        {/* Preamp Gain */}
-        <div
-          className="p-4 rounded-2xl border shadow-lg flex flex-col gap-2"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: themeColors.border,
-          }}
-        >
-          <div className="flex justify-between text-xs font-bold">
-            <span className="flex items-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5" style={{ color: themeColors.tertiary }} />
-              {isArabic ? 'مضخم الصوت المسبق (PREAMP)' : 'PREAMP GAIN'}
-            </span>
-            <span className="font-mono">{preampDb} dB</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={12}
-            step={0.5}
-            value={preampDb}
-            onChange={(e) => handlePreampChange(Number(e.target.value))}
-            className="w-full h-2 rounded appearance-none cursor-pointer"
+            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
             style={{
               accentColor: themeColors.tertiary,
               backgroundColor: themeColors.surfaceVariant,
@@ -613,84 +688,6 @@ export const EqualizerScreen: React.FC<EqualizerScreenProps> = ({ themeColors, i
           />
         </div>
       </div>
-
-      {/* Save Custom Preset Modal */}
-      {showSaveDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div
-            className="w-full max-w-sm rounded-2xl border p-5 shadow-2xl space-y-4"
-            style={{
-              backgroundColor: themeColors.surface,
-              borderColor: themeColors.border,
-              color: themeColors.textPrimary,
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BookmarkPlus className="w-5 h-5" style={{ color: themeColors.primary }} />
-                <h3 className="font-black text-sm">
-                  {isArabic ? 'حفظ إعداد مخصص جديد' : 'Save Custom Preset'}
-                </h3>
-              </div>
-              <button
-                onClick={() => {
-                  setShowSaveDialog(false);
-                  setCustomPresetName('');
-                }}
-                className="p-1 rounded-lg border hover:bg-white/5"
-                style={{ borderColor: themeColors.border }}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs opacity-75">
-              {isArabic
-                ? 'سيتم حفظ كافة مستويات الترددات الحالية وتضخيم Bass و Treble في إعداد دائم باسم تختاره:'
-                : 'Current frequency bands, bass boost, and treble boost will be saved to your personal presets:'}
-            </p>
-
-            <input
-              type="text"
-              value={customPresetName}
-              onChange={(e) => setCustomPresetName(e.target.value)}
-              placeholder={isArabic ? 'مثال: سيارة - Bass عالي' : 'e.g. My Studio Bass'}
-              autoFocus
-              className="w-full rounded-xl border px-3 py-2 text-xs outline-none transition-all"
-              style={{
-                borderColor: themeColors.border,
-                backgroundColor: themeColors.surfaceVariant,
-                color: themeColors.textPrimary,
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleSaveCustomPreset();
-              }}
-            />
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setShowSaveDialog(false);
-                  setCustomPresetName('');
-                }}
-                className="flex-1 py-2 rounded-xl border text-xs font-bold"
-                style={{ borderColor: themeColors.border }}
-              >
-                {isArabic ? 'إلغاء' : 'Cancel'}
-              </button>
-              <button
-                onClick={() => void handleSaveCustomPreset()}
-                disabled={!customPresetName.trim()}
-                className="flex-1 py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
-                style={{ backgroundColor: themeColors.primary }}
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{isArabic ? 'حفظ الإعداد' : 'Save'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

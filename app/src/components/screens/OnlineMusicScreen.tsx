@@ -1,27 +1,32 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Disc,
   Download,
+  FolderOpen,
   Globe,
-  ListPlus,
   ListMusic,
+  ListPlus,
   Music2,
-  X,
-  Plus,
   Play,
+  Plus,
   RefreshCw,
   Search,
   Sparkles,
+  Users,
+  X,
 } from 'lucide-react';
 import {
   AlbumatyHomeData,
   AlbumatyLink,
   AlbumatySection,
+  downloadOnlineItem,
+  downloadOnlineItemAsync,
   onlineMusicService,
 } from '../../services/OnlineMusicService';
 import { AudioItem, AudiusTrack, Playlist, ThemeColors } from '../../types';
-import { downloadOnlineItem, downloadOnlineItemAsync } from '../../services/OnlineMusicService';
 
 interface OnlineMusicScreenProps {
   themeColors: ThemeColors;
@@ -37,12 +42,15 @@ interface OnlineMusicScreenProps {
   onOpenQueue: () => void;
 }
 
-const EMPTY_ALBUMATY: AlbumatyHomeData = {
+const EMPTY_CATALOG: AlbumatyHomeData = {
   categories: [],
   albums: [],
   songs: [],
   artists: [],
 };
+
+type OnlineSourceTab = 'ALBUMATY' | 'OLDIES' | 'AUDIUS';
+type CatalogSubTab = 'SONGS' | 'ARTISTS' | 'ALBUMS' | 'CATEGORIES';
 
 function isSong(url: string): boolean {
   try {
@@ -83,10 +91,13 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
   onCreatePlaylist,
   onOpenQueue,
 }) => {
-  const [source, setSource] = useState<'ALBUMATY' | 'AUDIUS'>('ALBUMATY');
-  const [albumatyHome, setAlbumatyHome] = useState<AlbumatyHomeData>(EMPTY_ALBUMATY);
-  const [albumatySearchResults, setAlbumatySearchResults] = useState<AlbumatyHomeData | null>(null);
-  const [albumatySection, setAlbumatySection] = useState<AlbumatySection | null>(null);
+  const [source, setSource] = useState<OnlineSourceTab>('ALBUMATY');
+  const [subTab, setSubTab] = useState<CatalogSubTab>('SONGS');
+  const [albumatyHome, setAlbumatyHome] = useState<AlbumatyHomeData>(EMPTY_CATALOG);
+  const [oldiesHome, setOldiesHome] = useState<AlbumatyHomeData>(EMPTY_CATALOG);
+  const [searchResults, setSearchResults] = useState<AlbumatyHomeData | null>(null);
+  const [activeSection, setActiveSection] = useState<AlbumatySection | null>(null);
+  const [sectionHistory, setSectionHistory] = useState<AlbumatySection[]>([]);
   const [audiusTracks, setAudiusTracks] = useState<AudiusTrack[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -97,69 +108,69 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [playlistBusy, setPlaylistBusy] = useState(false);
 
+  // Viewport-adaptive pagination for zero scrolling
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(12);
+  const [gridCols, setGridCols] = useState(3);
+
   const loadAlbumaty = async (force = false) => {
     setLoading(true);
     setErrorMessage(null);
-    setMessage(null);
+    setActiveSection(null);
+    setSectionHistory([]);
+    setSearchResults(null);
     try {
-      setAlbumatyHome(await onlineMusicService.getAlbumatyHome(force));
-      setAlbumatySearchResults(null);
-      setAlbumatySection(null);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to load Albumaty.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAudius = async () => {
-    setLoading(true);
-    setErrorMessage(null);
-    setMessage(null);
-    try {
-      setAlbumatySearchResults(null);
-      const [trending, latest] = await Promise.all([
-        onlineMusicService.getTrendingTracks(),
-        onlineMusicService.getLatestTracks(),
-      ]);
-      setAudiusTracks(
-        [...trending, ...latest].filter(
-          (track, index, all) =>
-            all.findIndex((item) => item.id === track.id) === index
-        )
-      );
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to load Audius.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const performOnlineSearch = async () => {
-    const searchTerm = query.trim();
-    if (!searchTerm || loading) return;
-
-    setLoading(true);
-    setErrorMessage(null);
-    setMessage(null);
-    setAlbumatySection(null);
-    try {
-      if (source === 'ALBUMATY') {
-        const results = await onlineMusicService.searchAlbumaty(searchTerm);
-        setAlbumatySearchResults(results);
-      } else {
-        const results = await onlineMusicService.searchAudius(searchTerm);
-        setAudiusTracks(results);
-      }
+      const data = await onlineMusicService.getAlbumatyHome(force);
+      setAlbumatyHome(data);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : (isArabic ? 'تعذر البحث عن الأغاني.' : 'Could not search online music.')
+          : isArabic
+          ? 'تعذر تحميل ألبوماتي حالياً.'
+          : 'Unable to load Albumaty right now.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadOldies = async (force = false) => {
+    setLoading(true);
+    setErrorMessage(null);
+    setActiveSection(null);
+    setSectionHistory([]);
+    setSearchResults(null);
+    try {
+      const data = await onlineMusicService.getOldiesHome(force);
+      setOldiesHome(data);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر تحميل الزمن الجميل والكلاسيكيات حالياً.'
+          : 'Unable to load Oldies & Classics right now.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAudiusTrending = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const tracks = await onlineMusicService.getTrendingTracks();
+      setAudiusTracks(tracks);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر تحميل Audius حالياً.'
+          : 'Unable to load Audius right now.'
       );
     } finally {
       setLoading(false);
@@ -167,737 +178,1057 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
   };
 
   useEffect(() => {
+    setQuery('');
+    setSearchResults(null);
+    setActiveSection(null);
+    setSectionHistory([]);
+    setSubTab('SONGS');
+    setCurrentPage(1);
     if (source === 'ALBUMATY') {
-      void loadAlbumaty();
+      loadAlbumaty(false);
+    } else if (source === 'OLDIES') {
+      loadOldies(false);
     } else {
-      void loadAudius();
+      loadAudiusTrending();
     }
   }, [source]);
 
-  const filteredAlbumaty = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase();
-    if (!q) return albumatyHome;
-    const filter = (items: AlbumatyLink[]) =>
-      items.filter((item) => item.title.toLocaleLowerCase().includes(q));
-    return {
-      categories: filter(albumatyHome.categories),
-      albums: filter(albumatyHome.albums),
-      songs: filter(albumatyHome.songs),
-      artists: filter(albumatyHome.artists),
+  useEffect(() => {
+    const updateMetrics = () => {
+      const el = gridRef.current;
+      const width = el?.clientWidth || window.innerWidth - 64;
+      const height = el?.clientHeight || window.innerHeight - 250;
+      const cols = width >= 1340 ? 4 : width >= 920 ? 3 : width >= 600 ? 2 : 1;
+      const cardHeight = 68;
+      const rows = Math.max(2, Math.floor((height + 8) / cardHeight));
+      setGridCols(cols);
+      setItemsPerPage(Math.max(cols * 2, cols * rows));
     };
-  }, [albumatyHome, query]);
+    updateMetrics();
+    const obs = new ResizeObserver(updateMetrics);
+    if (gridRef.current) obs.observe(gridRef.current);
+    window.addEventListener('resize', updateMetrics);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener('resize', updateMetrics);
+    };
+  }, [source, subTab, activeSection]);
 
-  const activeAlbumaty = albumatySearchResults ?? filteredAlbumaty;
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [source, subTab, activeSection, searchResults, itemsPerPage]);
 
-  const filteredAudius = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase();
-    if (!q) return audiusTracks;
-    return audiusTracks.filter(
-      (track) =>
-        track.title.toLocaleLowerCase().includes(q) ||
-        track.artist.toLocaleLowerCase().includes(q) ||
-        (track.genre || '').toLocaleLowerCase().includes(q)
-    );
-  }, [audiusTracks, query]);
-
-  const resolveAndAct = async (
-    link: AlbumatyLink,
-    action: (item: AudioItem, title: string) => void
-  ) => {
-    setMessage(isArabic ? 'جاري تجهيز الأغنية...' : 'Preparing song...');
-    try {
-      const resolved = await onlineMusicService.resolveAlbumatySong(link.url);
-      const item = onlineMusicService.convertResolvedToAudioItem(resolved, link.url);
-      action(item, resolved.title);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : 'Failed to prepare song.'
-      );
+  const handleSearch = async () => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSearchResults(null);
+      if (source === 'AUDIUS') loadAudiusTrending();
+      return;
     }
-  };
 
-  const openAlbumatyLink = async (link: AlbumatyLink) => {
     setLoading(true);
     setErrorMessage(null);
-    setMessage(null);
+    setActiveSection(null);
+    setSectionHistory([]);
     try {
-      setAlbumatySection(await onlineMusicService.getAlbumatySection(link.url));
+      if (source === 'ALBUMATY') {
+        const result = await onlineMusicService.searchAlbumaty(trimmed);
+        setSearchResults(result);
+        if (result.songs.length > 0) setSubTab('SONGS');
+        else if (result.artists.length > 0) setSubTab('ARTISTS');
+        else if (result.albums.length > 0) setSubTab('ALBUMS');
+      } else if (source === 'OLDIES') {
+        const result = await onlineMusicService.searchOldies(trimmed);
+        setSearchResults(result);
+        if (result.songs.length > 0) setSubTab('SONGS');
+        else if (result.artists.length > 0) setSubTab('ARTISTS');
+        else if (result.albums.length > 0) setSubTab('ALBUMS');
+      } else {
+        const tracks = await onlineMusicService.searchAudius(trimmed);
+        setAudiusTracks(tracks);
+      }
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to open section.'
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'فشل البحث.'
+          : 'Search failed.'
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const playAlbumaty = (link: AlbumatyLink) => {
+  const openSection = async (link: AlbumatyLink) => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const section =
+        source === 'OLDIES'
+          ? await onlineMusicService.getOldiesSection(link.url)
+          : await onlineMusicService.getAlbumatySection(link.url);
+      if (activeSection) {
+        setSectionHistory((prev) => [...prev, activeSection]);
+      }
+      setActiveSection(section);
+      if (section.songs.length > 0) setSubTab('SONGS');
+      else if (section.sublinks.length > 0) setSubTab('ARTISTS');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر فتح القسم.'
+          : 'Unable to open section.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBackFromSection = () => {
+    if (sectionHistory.length > 0) {
+      const prev = sectionHistory[sectionHistory.length - 1];
+      setSectionHistory((h) => h.slice(0, -1));
+      setActiveSection(prev);
+      if (prev.songs.length > 0) setSubTab('SONGS');
+      else setSubTab('ARTISTS');
+    } else {
+      setActiveSection(null);
+      setSubTab('SONGS');
+    }
+  };
+
+  const resolveLinkToAudioItem = async (link: AlbumatyLink): Promise<AudioItem> => {
+    const provider = source === 'OLDIES' ? 'OLDIES' : 'ALBUMATY';
+    const resolved =
+      provider === 'OLDIES'
+        ? await onlineMusicService.resolveOldiesSong(link.url)
+        : await onlineMusicService.resolveAlbumatySong(link.url);
+    const stableId = `${provider === 'OLDIES' ? 'oldies' : 'albumaty'}_${encodeURIComponent(
+      link.url
+    )}`;
+    return onlineMusicService.convertResolvedToAudioItem(resolved, stableId, provider);
+  };
+
+  const playCatalogLink = async (link: AlbumatyLink) => {
     if (!isSong(link.url)) {
-      void openAlbumatyLink(link);
+      await openSection(link);
       return;
     }
-    void resolveAndAct(link, (item, title) => {
+    setMessage(isArabic ? `جاري تحضير: ${link.title}...` : `Preparing: ${link.title}...`);
+    setErrorMessage(null);
+    try {
+      const item = await resolveLinkToAudioItem(link);
       onPlayOnlineTrack(item);
-      setMessage(isArabic ? `يعمل الآن: ${title}` : `Playing: ${title}`);
-    });
+      setMessage(isArabic ? `يعمل الآن: ${item.title}` : `Playing: ${item.title}`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر تشغيل الأغنية.'
+          : 'Could not play song.'
+      );
+    }
   };
 
-  const queueAlbumaty = (link: AlbumatyLink) => {
-    if (!isSong(link.url)) {
-      void openAlbumatyLink(link);
-      return;
-    }
-    void resolveAndAct(link, (item, title) => {
-      onEnqueueTrack(item);
-      setMessage(isArabic ? `تمت إضافة ${title} إلى Queue` : `Added ${title} to Queue`);
-    });
-  };
-
-  const sendAlbumatyToDeck = (link: AlbumatyLink, deck: 'A' | 'B') => {
-    if (!isSong(link.url)) {
-      void openAlbumatyLink(link);
-      return;
-    }
-    void resolveAndAct(link, (item, title) => {
+  const sendCatalogLinkToDeck = async (link: AlbumatyLink, deck: 'A' | 'B') => {
+    setMessage(
+      isArabic ? `جاري تحميل إلى Deck ${deck}...` : `Loading into Deck ${deck}...`
+    );
+    setErrorMessage(null);
+    try {
+      const item = await resolveLinkToAudioItem(link);
       if (deck === 'A') onSendToDeckA(item);
       else onSendToDeckB(item);
       setMessage(
-        isArabic ? `تم إرسال ${title} إلى Deck ${deck}` : `Sent ${title} to Deck ${deck}`
+        isArabic
+          ? `تم إرسال "${item.title}" إلى Deck ${deck}`
+          : `Sent "${item.title}" to Deck ${deck}`
       );
-    });
-  };
-
-  const saveAlbumaty = (link: AlbumatyLink) => {
-    if (!isSong(link.url)) {
-      void openAlbumatyLink(link);
-      return;
-    }
-    void resolveAndAct(link, (item, title) => {
-      onSaveToLibrary(item);
-      setMessage(
-        isArabic ? `تم حفظ ${title} في المكتبة` : `Saved ${title} to Library`
-      );
-    });
-  };
-
-  const downloadAlbumaty = async (link: AlbumatyLink) => {
-    if (!isSong(link.url)) { void openAlbumatyLink(link); return; }
-    setMessage(isArabic ? `جاري تجهيز وتنزيل: ${link.title}…` : `Preparing download for: ${link.title}…`);
-    setErrorMessage(null);
-    try {
-      let resolvedItem: AudioItem;
-      try {
-        const resolved = await onlineMusicService.resolveAlbumatySong(link.url);
-        resolvedItem = onlineMusicService.convertResolvedToAudioItem(resolved, link.url);
-      } catch {
-        // Fallback to endpoint directly if metadata parsing has hiccups
-        resolvedItem = {
-          id: link.url,
-          title: link.title,
-          artist: 'Albumaty',
-          album: 'Albumaty Online',
-          duration: 0,
-          uri: onlineMusicService.getAlbumatyStreamEndpoint(link.url),
-          addedDate: Date.now(),
-          onlineSource: 'ALBUMATY',
-          sourceUrl: link.url,
-          downloadUri: onlineMusicService.getAlbumatyDownloadEndpoint(link.url),
-        };
-      }
-      await downloadOnlineItemAsync(resolvedItem, (msg) => setMessage(isArabic ? `جاري التنزيل: ${resolvedItem.title}…` : msg));
-      setMessage(isArabic ? `تم تنزيل "${resolvedItem.title}" بنجاح!` : `Successfully downloaded "${resolvedItem.title}"!`);
     } catch (error) {
-      // If async blob download fails, fallback to direct browser anchor trigger
-      const fallbackItem: AudioItem = {
-        id: link.url,
-        title: link.title,
-        artist: 'Albumaty',
-        album: 'Albumaty Online',
-        duration: 0,
-        uri: onlineMusicService.getAlbumatyStreamEndpoint(link.url),
-        addedDate: Date.now(),
-        onlineSource: 'ALBUMATY',
-        sourceUrl: link.url,
-        downloadUri: onlineMusicService.getAlbumatyDownloadEndpoint(link.url),
-      };
-      if (downloadOnlineItem(fallbackItem)) {
-        setMessage(isArabic ? 'بدأ تنزيل الأغنية عبر المتصفح…' : 'Download initiated via browser…');
-      } else {
-        setErrorMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر تنزيل الأغنية.' : 'Could not download track.'));
-      }
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر الإرسال إلى الديك.'
+          : 'Failed to send to deck.'
+      );
     }
   };
 
-  const addAlbumatyToPlaylist = (link: AlbumatyLink) => {
-    if (!isSong(link.url)) { void openAlbumatyLink(link); return; }
-    void resolveAndAct(link, (item, title) => {
+  const enqueueCatalogLink = async (link: AlbumatyLink) => {
+    try {
+      const item = await resolveLinkToAudioItem(link);
+      onEnqueueTrack(item);
+      setMessage(
+        isArabic
+          ? `تمت إضافة "${item.title}" إلى قائمة الانتظار`
+          : `Added "${item.title}" to Queue`
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر الإضافة إلى قائمة الانتظار.'
+          : 'Could not add to queue.'
+      );
+    }
+  };
+
+  const openPlaylistModalForCatalogLink = async (link: AlbumatyLink) => {
+    try {
+      const item = await resolveLinkToAudioItem(link);
       setPendingPlaylistTrack(item);
       setShowPlaylistPicker(true);
-      setMessage(isArabic ? `اختر قائمة لإضافة ${title}` : `Choose a playlist for ${title}`);
-    });
-  };
-
-  const addAudiusToPlaylist = (track: AudiusTrack) => {
-    setPendingPlaylistTrack(onlineMusicService.convertAudiusToAudioItem(track));
-    setShowPlaylistPicker(true);
-    setMessage(isArabic ? `اختر قائمة لإضافة ${track.title}` : `Choose a playlist for ${track.title}`);
-  };
-
-  const choosePlaylist = async (playlistId: string) => {
-    if (!pendingPlaylistTrack || playlistBusy) return;
-    setPlaylistBusy(true);
-    try {
-      await onAddSongToPlaylist(playlistId, pendingPlaylistTrack);
-      setMessage(isArabic ? `تمت إضافة "${pendingPlaylistTrack.title}" إلى قائمة التشغيل` : `Added "${pendingPlaylistTrack.title}" to the playlist`);
-      setShowPlaylistPicker(false);
-      setPendingPlaylistTrack(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : (isArabic ? 'تعذرت إضافة الأغنية للقائمة.' : 'Could not add the track to the playlist.'));
-    } finally {
-      setPlaylistBusy(false);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر تجهيز الأغنية للقائمة.'
+          : 'Could not prepare song for playlist.'
+      );
     }
   };
 
-  const createPlaylistAndAdd = async () => {
-    if (!pendingPlaylistTrack || !newPlaylistName.trim() || playlistBusy) return;
-    setPlaylistBusy(true);
+  const downloadCatalogLink = async (link: AlbumatyLink) => {
+    setMessage(isArabic ? `جاري تنزيل: ${link.title}...` : `Downloading: ${link.title}...`);
+    setErrorMessage(null);
     try {
-      const created = await onCreatePlaylist(newPlaylistName.trim());
-      await onAddSongToPlaylist(created.id, pendingPlaylistTrack);
-      setNewPlaylistName('');
-      setMessage(isArabic ? `تم إنشاء "${created.name}" وإضافة الأغنية إليها` : `Created "${created.name}" and added the track`);
-      setShowPlaylistPicker(false);
-      setPendingPlaylistTrack(null);
+      const item = await resolveLinkToAudioItem(link);
+      await downloadOnlineItemAsync(item, (msg) =>
+        setMessage(isArabic ? `جاري تنزيل: ${item.title}...` : msg)
+      );
+      onSaveToLibrary(item);
+      setMessage(
+        isArabic ? `تم تنزيل "${item.title}" بنجاح!` : `Downloaded "${item.title}"!`
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر إنشاء القائمة.' : 'Could not create the playlist.'));
-    } finally {
-      setPlaylistBusy(false);
+      try {
+        const item = await resolveLinkToAudioItem(link);
+        if (downloadOnlineItem(item)) {
+          onSaveToLibrary(item);
+          setMessage(
+            isArabic
+              ? 'بدأ تنزيل الأغنية عبر المتصفح...'
+              : 'Download initiated via browser...'
+          );
+          return;
+        }
+      } catch {
+        // ignore fallback error
+      }
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : isArabic
+          ? 'تعذر تنزيل الأغنية.'
+          : 'Could not download song.'
+      );
     }
   };
 
   const downloadAudius = async (track: AudiusTrack) => {
-    setMessage(isArabic ? `جاري تنزيل: ${track.title}…` : `Downloading: ${track.title}…`);
+    setMessage(isArabic ? `جاري تنزيل: ${track.title}...` : `Downloading: ${track.title}...`);
     setErrorMessage(null);
     const item = onlineMusicService.convertAudiusToAudioItem(track);
     try {
-      await downloadOnlineItemAsync(item, (msg) => setMessage(isArabic ? `جاري تنزيل: ${track.title}…` : msg));
-      setMessage(isArabic ? `تم تنزيل "${track.title}" بنجاح!` : `Successfully downloaded "${track.title}"!`);
+      await downloadOnlineItemAsync(item, (msg) =>
+        setMessage(isArabic ? `جاري تنزيل: ${track.title}...` : msg)
+      );
+      onSaveToLibrary(item);
+      setMessage(
+        isArabic ? `تم تنزيل "${track.title}" بنجاح!` : `Downloaded "${track.title}"!`
+      );
     } catch (error) {
       if (downloadOnlineItem(item)) {
-        setMessage(isArabic ? 'بدأ تنزيل الأغنية عبر المتصفح…' : 'Download initiated via browser…');
+        onSaveToLibrary(item);
+        setMessage(
+          isArabic
+            ? 'بدأ تنزيل الأغنية عبر المتصفح...'
+            : 'Download initiated via browser...'
+        );
       } else {
-        setErrorMessage(error instanceof Error ? error.message : (isArabic ? 'تعذر تنزيل الأغنية.' : 'Could not download track.'));
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : isArabic
+            ? 'تعذر تنزيل الأغنية.'
+            : 'Could not download track.'
+        );
       }
     }
   };
 
-  const playAudius = (track: AudiusTrack) => {
-    onPlayOnlineTrack(onlineMusicService.convertAudiusToAudioItem(track));
-    setMessage(isArabic ? `يعمل الآن: ${track.title}` : `Playing: ${track.title}`);
-  };
+  const activeCatalog = useMemo<AlbumatyHomeData>(() => {
+    if (searchResults) return searchResults;
+    return source === 'OLDIES' ? oldiesHome : albumatyHome;
+  }, [source, searchResults, oldiesHome, albumatyHome]);
 
-  const queueAudius = (track: AudiusTrack) => {
-    onEnqueueTrack(onlineMusicService.convertAudiusToAudioItem(track));
-    setMessage(isArabic ? `تمت إضافة ${track.title} إلى Queue` : `Added ${track.title} to Queue`);
-  };
+  const currentItems = useMemo(() => {
+    if (source === 'AUDIUS') {
+      return audiusTracks.map((t) => ({ kind: 'AUDIUS' as const, track: t }));
+    }
+    if (activeSection) {
+      if (subTab === 'SONGS' && activeSection.songs.length > 0) {
+        return activeSection.songs.map((link) => ({ kind: 'SONG' as const, link }));
+      }
+      if (activeSection.sublinks.length > 0) {
+        return activeSection.sublinks.map((link) => ({
+          kind: isSong(link.url) ? ('SONG' as const) : ('SECTION' as const),
+          link,
+        }));
+      }
+      return activeSection.songs.map((link) => ({ kind: 'SONG' as const, link }));
+    }
+    if (subTab === 'SONGS') {
+      return activeCatalog.songs.map((link) => ({ kind: 'SONG' as const, link }));
+    }
+    if (subTab === 'ARTISTS') {
+      return activeCatalog.artists.map((link) => ({ kind: 'SECTION' as const, link }));
+    }
+    if (subTab === 'ALBUMS') {
+      return activeCatalog.albums.map((link) => ({ kind: 'SECTION' as const, link }));
+    }
+    return activeCatalog.categories.map((link) => ({ kind: 'SECTION' as const, link }));
+  }, [source, activeSection, subTab, activeCatalog, audiusTracks]);
 
-  const saveAudius = (track: AudiusTrack) => {
-    onSaveToLibrary(onlineMusicService.convertAudiusToAudioItem(track));
-    setMessage(isArabic ? `تم حفظ ${track.title} في المكتبة` : `Saved ${track.title} to Library`);
-  };
-
-  const sendAudiusToDeck = (track: AudiusTrack, deck: 'A' | 'B') => {
-    const item = onlineMusicService.convertAudiusToAudioItem(track);
-    if (deck === 'A') onSendToDeckA(item);
-    else onSendToDeckB(item);
-  };
-
-  // Online result cards share playback, queue, download and playlist actions.
-  const renderAlbumatySongCard = (link: AlbumatyLink) => (
-    <div
-      key={link.url}
-      className="rounded-2xl border p-3.5 flex items-center gap-3 shadow-sm"
-      style={{
-        backgroundColor: themeColors.surface,
-        borderColor: themeColors.border,
-      }}
-    >
-      <div
-        className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border"
-        style={{
-          backgroundColor: themeColors.surfaceVariant,
-          borderColor: themeColors.border,
-        }}
-      >
-        <Music2 className="w-5 h-5" style={{ color: themeColors.primary }} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="font-bold text-xs truncate" title={link.title}>
-          {link.title}
-        </div>
-        <div className="text-[10px] opacity-50 truncate" title={link.url}>
-          {link.url}
-        </div>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={() => playAlbumaty(link)}
-          className="p-1.5 rounded-lg border"
-          style={{
-            backgroundColor: themeColors.primary,
-            borderColor: themeColors.primary,
-            color: '#fff',
-          }}
-          title={isArabic ? 'تشغيل' : 'Play'}
-        >
-          <Play className="w-3.5 h-3.5 fill-current" />
-        </button>
-        <button
-          onClick={() => queueAlbumaty(link)}
-          className="p-1.5 rounded-lg border"
-          style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'إضافة للانتظار' : 'Add to queue'}
-        >
-          <ListPlus className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => downloadAlbumaty(link)}
-          className="p-1.5 rounded-lg border"
-          style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'تنزيل' : 'Download'}
-        >
-          <Download className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => saveAlbumaty(link)}
-          className="p-1.5 rounded-lg border"
-          style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'حفظ في المكتبة' : 'Save to library'}
-        >
-          <Disc className="w-3.5 h-3.5" />
-        </button>
-        <button type="button" onClick={() => { addAlbumatyToPlaylist(link); }} className="p-1.5 rounded-lg border" style={{ borderColor: themeColors.border }} title="Add to playlist"><ListMusic className="w-3.5 h-3.5" /></button>
-        <button
-          onClick={() => { sendAlbumatyToDeck(link, 'A'); }}
-          className="px-1.5 py-1 rounded-lg border text-[10px] font-bold"
-          style={{ borderColor: themeColors.accentA, color: themeColors.accentA }}
-          title="Deck A"
-        >
-          A
-        </button>
-        <button
-          onClick={() => sendAlbumatyToDeck(link, 'B')}
-          className="px-1.5 py-1 rounded-lg border text-[10px] font-bold"
-          style={{ borderColor: themeColors.accentB, color: themeColors.accentB }}
-          title="Deck B"
-        >
-          B
-        </button>
-      </div>
-    </div>
+  const totalPages = Math.max(1, Math.ceil(currentItems.length / itemsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedItems = currentItems.slice(
+    (safePage - 1) * itemsPerPage,
+    safePage * itemsPerPage
   );
 
-  const renderAudiusCard = (track: AudiusTrack) => (
-    <div
-      key={track.id}
-      className="rounded-2xl border p-3 flex items-center gap-3"
-      style={{
-        backgroundColor: themeColors.surface,
-        borderColor: themeColors.border,
-      }}
-    >
-      <div
-        className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border flex items-center justify-center"
-        style={{
-          borderColor: themeColors.border,
-          backgroundColor: themeColors.surfaceVariant,
-        }}
-      >
-        {track.artworkUrl ? (
-          <img
-            src={track.artworkUrl}
-            alt=""
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <Music2 className="w-5 h-5" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="font-bold text-xs truncate">{track.title}</div>
-        <div className="text-[11px] opacity-70 truncate">{track.artist}</div>
-        <div className="text-[10px] opacity-50 mt-1">
-          {track.genre || 'Audius'} · {formatMs(track.duration)}
-        </div>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={() => playAudius(track)}
-          className="p-1.5 rounded-lg border"
-          style={{
-            backgroundColor: themeColors.primary,
-            borderColor: themeColors.primary,
-            color: '#fff',
-          }}
-          title={isArabic ? 'تشغيل' : 'Play'}
-        >
-          <Play className="w-3.5 h-3.5 fill-current" />
-        </button>
-        <button
-          onClick={() => queueAudius(track)}
-          className="p-1.5 rounded-lg border"
-          style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'إضافة للانتظار' : 'Add to queue'}
-        >
-          <ListPlus className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => downloadAudius(track)}
-          className="p-1.5 rounded-lg border"
-          style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'تنزيل الأغنية' : 'Download track'}
-        >
-          <Download className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => saveAudius(track)}
-          className="p-1.5 rounded-lg border"
-          style={{ borderColor: themeColors.border }}
-          title={isArabic ? 'حفظ في المكتبة' : 'Save to library'}
-        >
-          <Disc className="w-3.5 h-3.5" />
-        </button>
-        <button type="button" onClick={() => addAudiusToPlaylist(track)} className="p-1.5 rounded-lg border" style={{ borderColor: themeColors.border }} title={isArabic ? 'إضافة إلى قائمة تشغيل' : 'Add to playlist'}><ListMusic className="w-3.5 h-3.5" /></button>
-        <button
-          onClick={() => { sendAudiusToDeck(track, 'A'); }}
-          className="px-1.5 py-1 rounded-lg border text-[10px] font-bold"
-          style={{ borderColor: themeColors.accentA, color: themeColors.accentA }}
-        >
-          A
-        </button>
-        <button
-          onClick={() => sendAudiusToDeck(track, 'B')}
-          className="px-1.5 py-1 rounded-lg border text-[10px] font-bold"
-          style={{ borderColor: themeColors.accentB, color: themeColors.accentB }}
-        >
-          B
-        </button>
-      </div>
-    </div>
-  );
+  const handleSelectPlaylist = async (playlistId: string) => {
+    if (!pendingPlaylistTrack) return;
+    setPlaylistBusy(true);
+    try {
+      await onAddSongToPlaylist(playlistId, pendingPlaylistTrack);
+      onSaveToLibrary(pendingPlaylistTrack);
+      setShowPlaylistPicker(false);
+      setPendingPlaylistTrack(null);
+      setMessage(isArabic ? 'تمت الإضافة إلى قائمة التشغيل!' : 'Added to playlist!');
+    } finally {
+      setPlaylistBusy(false);
+    }
+  };
+
+  const handleCreateAndAdd = async () => {
+    const trimmed = newPlaylistName.trim();
+    if (!trimmed || !pendingPlaylistTrack) return;
+    setPlaylistBusy(true);
+    try {
+      const created = await onCreatePlaylist(trimmed);
+      await onAddSongToPlaylist(created.id, pendingPlaylistTrack);
+      onSaveToLibrary(pendingPlaylistTrack);
+      setNewPlaylistName('');
+      setShowPlaylistPicker(false);
+      setPendingPlaylistTrack(null);
+      setMessage(
+        isArabic
+          ? `تم إنشاء قائمة "${created.name}" وإضافة الأغنية!`
+          : `Created "${created.name}" and added song!`
+      );
+    } finally {
+      setPlaylistBusy(false);
+    }
+  };
 
   return (
     <div
-      id="online-music-screen"
-      className="flex-1 flex flex-col min-h-0 overflow-hidden p-4"
-      style={{
-        backgroundColor: themeColors.background,
-        color: themeColors.textPrimary,
-      }}
+      className="h-full min-h-0 flex flex-col overflow-hidden p-3 select-none"
+      style={{ backgroundColor: themeColors.background, color: themeColors.textPrimary }}
     >
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {albumatySection && (
-            <button
-              onClick={() => setAlbumatySection(null)}
-              className="p-2 rounded-xl border"
-              style={{ borderColor: themeColors.border }}
-              title={isArabic ? 'رجوع' : 'Back'}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
-          <Globe className="w-6 h-6 shrink-0" style={{ color: themeColors.primary }} />
-          <div className="min-w-0">
-            <h1 className="text-lg font-black tracking-wide truncate">
-              {source === 'ALBUMATY'
-                ? isArabic
-                  ? 'الموسيقى أونلاين — ألبوماتي'
-                  : 'Online Music — Albumaty'
-                : isArabic
-                  ? 'الموسيقى الأجنبية — Audius'
-                  : 'Foreign Music — Audius'}
-            </h1>
-            <p className="text-xs truncate" style={{ color: themeColors.textMuted }}>
-              {source === 'ALBUMATY'
-                ? isArabic
-                  ? 'كتالوج ألبوماتي مباشر — بدون أي أغاني تجريبية داخل البرنامج'
-                  : 'Live Albumaty catalog — no bundled demo songs'
-                : isArabic
-                  ? 'كتالوج Audius مباشر — بدون أغاني تجريبية'
-                  : 'Live Audius catalog — no bundled demo songs'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenQueue}
-            className="px-3 py-2 rounded-xl border text-xs font-bold"
-            style={{ borderColor: themeColors.border }}
-            title="Queue"
-          >
-            Q / Queue
-          </button>
-          <button
-            onClick={() =>
-              source === 'ALBUMATY' ? void loadAlbumaty(true) : void loadAudius()
-            }
-            className="p-2 rounded-xl border"
-            style={{ borderColor: themeColors.border }}
-            title={isArabic ? 'تحديث' : 'Refresh'}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={() => {
-            setSource('ALBUMATY');
-            setQuery('');
-            setAlbumatySection(null);
-            setErrorMessage(null);
-          }}
-          className="flex-1 rounded-xl border px-3 py-2 text-xs font-bold flex items-center justify-center gap-2"
-          style={{
-            backgroundColor:
-              source === 'ALBUMATY'
-                ? themeColors.primary
-                : themeColors.surfaceVariant,
-            borderColor:
-              source === 'ALBUMATY'
-                ? themeColors.primary
-                : themeColors.border,
-            color: source === 'ALBUMATY' ? '#fff' : themeColors.textPrimary,
-          }}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          🇦🇪 Arabic
-        </button>
-        <button
-          onClick={() => {
-            setSource('AUDIUS');
-            setQuery('');
-            setAlbumatySection(null);
-            setErrorMessage(null);
-          }}
-          className="flex-1 rounded-xl border px-3 py-2 text-xs font-bold flex items-center justify-center gap-2"
-          style={{
-            backgroundColor:
-              source === 'AUDIUS'
-                ? themeColors.primary
-                : themeColors.surfaceVariant,
-            borderColor:
-              source === 'AUDIUS'
-                ? themeColors.primary
-                : themeColors.border,
-            color: source === 'AUDIUS' ? '#fff' : themeColors.textPrimary,
-          }}
-        >
-          <Globe className="w-3.5 h-3.5" />
-          🌎 Foreign
-        </button>
-      </div>
-
-      <form
-        onSubmit={(event) => { event.preventDefault(); void performOnlineSearch(); }}
-        className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl border"
+      {/* Top Control Header (No Subtitles) */}
+      <div
+        className="rounded-xl p-2.5 border mb-2.5 shrink-0 flex flex-wrap items-center justify-between gap-2"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
         }}
-        role="search"
       >
-        <Search className="w-4 h-4 opacity-60 shrink-0" />
-        <input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setAlbumatySearchResults(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              setQuery('');
-              setAlbumatySearchResults(null);
-            }
-          }}
-          className="bg-transparent outline-none flex-1 text-xs min-w-0"
-          placeholder={
-            source === 'ALBUMATY'
-              ? isArabic
-                ? 'ابحث باسم المطرب أو الأغنية...'
-                : 'Search by artist or song title...'
-              : isArabic
-                ? 'ابحث باسم المطرب أو الأغنية...'
-                : 'Search by artist or song title...'
-          }
-          aria-label={isArabic ? 'البحث باسم المطرب أو الأغنية' : 'Search by artist or song title'}
-        />
-        {query.trim() && (
-          <button
-            type="button"
-            onClick={() => { setQuery(''); setAlbumatySearchResults(null); }}
-            className="p-1 rounded-md opacity-60 hover:opacity-100"
-            aria-label={isArabic ? 'مسح البحث' : 'Clear search'}
-            title={isArabic ? 'مسح البحث' : 'Clear search'}
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-        <button
-          type="submit"
-          disabled={loading || !query.trim()}
-          className="rounded-lg px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
-          style={{ backgroundColor: themeColors.primary, color: '#fff' }}
-        >
-          <Search className="w-3.5 h-3.5" />
-          <span>{isArabic ? 'بحث' : 'Search'}</span>
-        </button>
-      </form>
-
-      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-        {loading ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-xs opacity-70">
-            <RefreshCw
-              className="w-8 h-8 animate-spin"
-              style={{ color: themeColors.primary }}
-            />
-            {isArabic ? 'جاري جلب الكتالوج من الإنترنت...' : 'Loading live online catalog...'}
-          </div>
-        ) : errorMessage ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-center text-xs">
-            <div className="font-bold max-w-xl">{errorMessage}</div>
+        <div className="flex items-center gap-2 min-w-0">
+          {activeSection && (
             <button
-              onClick={() =>
-                source === 'ALBUMATY' ? void loadAlbumaty(true) : void loadAudius()
-              }
-              className="px-3 py-2 rounded-xl font-bold"
-              style={{ backgroundColor: themeColors.primary, color: '#fff' }}
+              onClick={handleBackFromSection}
+              className="px-2.5 py-1.5 rounded-lg border flex items-center gap-1 text-xs font-bold shrink-0"
+              style={{
+                backgroundColor: themeColors.surfaceVariant,
+                borderColor: themeColors.border,
+              }}
             >
-              {isArabic ? 'إعادة المحاولة' : 'Retry'}
+              <ArrowLeft className="w-3.5 h-3.5" />
+              {isArabic ? 'رجوع' : 'Back'}
             </button>
+          )}
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ backgroundColor: `${themeColors.primary}20` }}
+          >
+            <Globe className="w-4 h-4" style={{ color: themeColors.primary }} />
           </div>
-        ) : source === 'ALBUMATY' ? (
-          albumatySection ? (
-            <div className="space-y-3">
-              <div
-                className="rounded-2xl border p-4"
-                style={{
-                  backgroundColor: themeColors.surface,
-                  borderColor: themeColors.border,
-                }}
-              >
-                <div className="text-sm font-black">{albumatySection.title}</div>
-              </div>
+          <h1 className="text-sm font-bold tracking-tight truncate">
+            {activeSection
+              ? activeSection.title
+              : isArabic
+              ? 'الموسيقى أونلاين'
+              : 'Online Music'}
+          </h1>
+        </div>
 
-              {albumatySection.content.length === 0 ? (
-                <div className="py-12 text-center text-xs opacity-60">
-                  {isArabic ? 'لا توجد عناصر متاحة.' : 'No online items found.'}
-                </div>
-              ) : (
-                albumatySection.content.map((link) =>
-                  isSong(link.url)
-                    ? renderAlbumatySongCard(link)
-                    : (
+        {/* Source Switcher: Albumaty | Oldies & Classics | Audius */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setSource('ALBUMATY')}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border"
+            style={{
+              backgroundColor:
+                source === 'ALBUMATY' ? themeColors.primary : themeColors.surfaceVariant,
+              borderColor:
+                source === 'ALBUMATY' ? themeColors.primary : themeColors.border,
+              color: source === 'ALBUMATY' ? '#fff' : themeColors.textPrimary,
+            }}
+          >
+            {isArabic ? 'ألبوماتي (Albumaty)' : 'Albumaty'}
+          </button>
+          <button
+            onClick={() => setSource('OLDIES')}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1"
+            style={{
+              backgroundColor:
+                source === 'OLDIES' ? themeColors.primary : themeColors.surfaceVariant,
+              borderColor:
+                source === 'OLDIES' ? themeColors.primary : themeColors.border,
+              color: source === 'OLDIES' ? '#fff' : themeColors.textPrimary,
+            }}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            {isArabic ? 'الزمن الجميل والكلاسيكيات' : 'Oldies & Classics'}
+          </button>
+          <button
+            onClick={() => setSource('AUDIUS')}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border"
+            style={{
+              backgroundColor:
+                source === 'AUDIUS' ? themeColors.primary : themeColors.surfaceVariant,
+              borderColor:
+                source === 'AUDIUS' ? themeColors.primary : themeColors.border,
+              color: source === 'AUDIUS' ? '#fff' : themeColors.textPrimary,
+            }}
+          >
+            Audius
+          </button>
+        </div>
+
+        {/* Search & Refresh */}
+        <div className="flex items-center gap-1.5 flex-1 justify-end min-w-[240px]">
+          <div className="relative w-48 sm:w-60">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 opacity-50" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              placeholder={
+                source === 'OLDIES'
+                  ? isArabic
+                    ? 'ابحث في الزمن الجميل...'
+                    : 'Search Oldies & Classics...'
+                  : isArabic
+                  ? 'ابحث عن أغنية أو فنان...'
+                  : 'Search song or artist...'
+              }
+              className="w-full pl-8 pr-2.5 py-1.5 rounded-lg border text-xs outline-none"
+              style={{
+                backgroundColor: themeColors.background,
+                borderColor: themeColors.border,
+                color: themeColors.textPrimary,
+              }}
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-white shrink-0"
+            style={{ backgroundColor: themeColors.primary }}
+          >
+            {isArabic ? 'بحث' : 'Search'}
+          </button>
+          <button
+            onClick={onOpenQueue}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 shrink-0"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+          >
+            <ListMusic className="w-3.5 h-3.5" />
+            Queue
+          </button>
+          <button
+            onClick={() => {
+              if (source === 'ALBUMATY') loadAlbumaty(true);
+              else if (source === 'OLDIES') loadOldies(true);
+              else loadAudiusTrending();
+            }}
+            disabled={loading}
+            className="p-1.5 rounded-lg border shrink-0"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+            title={isArabic ? 'تحديث' : 'Refresh'}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Category Sub-Tabs for Albumaty / Oldies */}
+      {source !== 'AUDIUS' && (
+        <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {activeSection ? (
+              <>
+                {activeSection.songs.length > 0 && (
+                  <button
+                    onClick={() => setSubTab('SONGS')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
+                    style={{
+                      backgroundColor:
+                        subTab === 'SONGS'
+                          ? `${themeColors.primary}22`
+                          : themeColors.surface,
+                      borderColor:
+                        subTab === 'SONGS' ? themeColors.primary : themeColors.border,
+                      color:
+                        subTab === 'SONGS' ? themeColors.primary : themeColors.textSecondary,
+                    }}
+                  >
+                    <Music2 className="w-3.5 h-3.5" />
+                    {isArabic
+                      ? `الأغاني (${activeSection.songs.length})`
+                      : `Songs (${activeSection.songs.length})`}
+                  </button>
+                )}
+                {activeSection.sublinks.length > 0 && (
+                  <button
+                    onClick={() => setSubTab('ARTISTS')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
+                    style={{
+                      backgroundColor:
+                        subTab !== 'SONGS'
+                          ? `${themeColors.primary}22`
+                          : themeColors.surface,
+                      borderColor:
+                        subTab !== 'SONGS' ? themeColors.primary : themeColors.border,
+                      color:
+                        subTab !== 'SONGS' ? themeColors.primary : themeColors.textSecondary,
+                    }}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    {isArabic
+                      ? `الأقسام والألبومات (${activeSection.sublinks.length})`
+                      : `Items (${activeSection.sublinks.length})`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setSubTab('SONGS')}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
+                  style={{
+                    backgroundColor:
+                      subTab === 'SONGS'
+                        ? `${themeColors.primary}22`
+                        : themeColors.surface,
+                    borderColor:
+                      subTab === 'SONGS' ? themeColors.primary : themeColors.border,
+                    color:
+                      subTab === 'SONGS' ? themeColors.primary : themeColors.textSecondary,
+                  }}
+                >
+                  <Music2 className="w-3.5 h-3.5" />
+                  {isArabic
+                    ? `الأغاني (${activeCatalog.songs.length})`
+                    : `Songs (${activeCatalog.songs.length})`}
+                </button>
+                <button
+                  onClick={() => setSubTab('ARTISTS')}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
+                  style={{
+                    backgroundColor:
+                      subTab === 'ARTISTS'
+                        ? `${themeColors.primary}22`
+                        : themeColors.surface,
+                    borderColor:
+                      subTab === 'ARTISTS' ? themeColors.primary : themeColors.border,
+                    color:
+                      subTab === 'ARTISTS'
+                        ? themeColors.primary
+                        : themeColors.textSecondary,
+                  }}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  {isArabic
+                    ? `الفنانون (${activeCatalog.artists.length})`
+                    : `Artists (${activeCatalog.artists.length})`}
+                </button>
+                <button
+                  onClick={() => setSubTab('ALBUMS')}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
+                  style={{
+                    backgroundColor:
+                      subTab === 'ALBUMS'
+                        ? `${themeColors.primary}22`
+                        : themeColors.surface,
+                    borderColor:
+                      subTab === 'ALBUMS' ? themeColors.primary : themeColors.border,
+                    color:
+                      subTab === 'ALBUMS' ? themeColors.primary : themeColors.textSecondary,
+                  }}
+                >
+                  <Disc className="w-3.5 h-3.5" />
+                  {isArabic
+                    ? `الألبومات (${activeCatalog.albums.length})`
+                    : `Albums (${activeCatalog.albums.length})`}
+                </button>
+                <button
+                  onClick={() => setSubTab('CATEGORIES')}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1"
+                  style={{
+                    backgroundColor:
+                      subTab === 'CATEGORIES'
+                        ? `${themeColors.primary}22`
+                        : themeColors.surface,
+                    borderColor:
+                      subTab === 'CATEGORIES' ? themeColors.primary : themeColors.border,
+                    color:
+                      subTab === 'CATEGORIES'
+                        ? themeColors.primary
+                        : themeColors.textSecondary,
+                  }}
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  {isArabic
+                    ? `التصنيفات (${activeCatalog.categories.length})`
+                    : `Categories (${activeCatalog.categories.length})`}
+                </button>
+              </>
+            )}
+          </div>
+
+          {searchResults && (
+            <button
+              onClick={() => {
+                setSearchResults(null);
+                setQuery('');
+              }}
+              className="px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1"
+              style={{
+                backgroundColor: themeColors.surfaceVariant,
+                borderColor: themeColors.border,
+              }}
+            >
+              <X className="w-3 h-3" />
+              {isArabic ? 'مسح البحث' : 'Clear Search'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Status / Error Banner */}
+      {(message || errorMessage) && (
+        <div
+          className="mb-2 px-3 py-1.5 rounded-lg border text-xs flex items-center justify-between shrink-0"
+          style={{
+            backgroundColor: errorMessage
+              ? 'rgba(239,68,68,0.12)'
+              : `${themeColors.primary}15`,
+            borderColor: errorMessage
+              ? 'rgba(239,68,68,0.35)'
+              : `${themeColors.primary}40`,
+            color: errorMessage ? '#fca5a5' : themeColors.textPrimary,
+          }}
+        >
+          <span className="truncate">{errorMessage || message}</span>
+          <button
+            onClick={() => {
+              setMessage(null);
+              setErrorMessage(null);
+            }}
+            className="text-[11px] opacity-70 hover:opacity-100 ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Adaptive Grid Area (No Vertical or Horizontal Scroll) */}
+      <div ref={gridRef} className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center gap-2 text-xs opacity-70">
+            <RefreshCw className="w-4 h-4 animate-spin" style={{ color: themeColors.primary }} />
+            <span>{isArabic ? 'جاري التحميل...' : 'Loading...'}</span>
+          </div>
+        ) : pagedItems.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center text-xs opacity-60">
+            {isArabic ? 'لا توجد عناصر متاحة حالياً' : 'No items available'}
+          </div>
+        ) : (
+          <div
+            className="grid gap-2 content-start flex-1 min-h-0 overflow-hidden"
+            style={{
+              gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+            }}
+          >
+            {pagedItems.map((entry, idx) => {
+              if (entry.kind === 'AUDIUS') {
+                const track = entry.track;
+                const audioItem = onlineMusicService.convertAudiusToAudioItem(track);
+                return (
+                  <div
+                    key={`${track.id}_${idx}`}
+                    className="rounded-xl border p-2 flex items-center gap-2.5 h-[62px]"
+                    style={{
+                      backgroundColor: themeColors.surface,
+                      borderColor: themeColors.border,
+                    }}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden border"
+                      style={{
+                        backgroundColor: themeColors.surfaceVariant,
+                        borderColor: themeColors.border,
+                      }}
+                    >
+                      {track.artworkUrl ? (
+                        <img
+                          src={track.artworkUrl}
+                          alt={track.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Music2 className="w-4 h-4" style={{ color: themeColors.primary }} />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-xs truncate">{track.title}</div>
+                      <div className="text-[10px] opacity-60 truncate">
+                        {track.artist} • {formatMs(track.duration)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
-                        key={link.url}
-                        onClick={() => void openAlbumatyLink(link)}
-                        className="w-full text-left rounded-2xl border p-3"
+                        onClick={() => onPlayOnlineTrack(audioItem)}
+                        className="p-1.5 rounded-lg text-white"
+                        style={{ backgroundColor: themeColors.primary }}
+                        title={isArabic ? 'تشغيل' : 'Play'}
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          onEnqueueTrack(audioItem);
+                          setMessage(
+                            isArabic
+                              ? `تمت إضافة ${track.title} إلى قائمة الانتظار`
+                              : `Added ${track.title} to Queue`
+                          );
+                        }}
+                        className="p-1.5 rounded-lg border"
                         style={{
-                          backgroundColor: themeColors.surface,
+                          backgroundColor: themeColors.surfaceVariant,
                           borderColor: themeColors.border,
                         }}
+                        title="Queue"
                       >
-                        <div className="font-bold text-xs truncate" title={link.title}>
-                          {link.title}
-                        </div>
-                        <div className="text-[10px] opacity-50 mt-1 truncate" title={link.url}>
-                          {link.url}
-                        </div>
+                        <ListMusic className="w-3 h-3" />
                       </button>
-                    )
-                )
-              )}
-              {message && <div className="px-1 text-xs opacity-70">{message}</div>}
-            </div>
-          ) : (
-            <div className="space-y-5">
-              {albumatySearchResults &&
-                activeAlbumaty.categories.length + activeAlbumaty.albums.length + activeAlbumaty.songs.length + activeAlbumaty.artists.length === 0 ? (
-                <div className="py-12 text-center space-y-2 text-xs" style={{ color: themeColors.textMuted }}>
-                  <Search className="w-8 h-8 mx-auto opacity-40" />
-                  <div className="font-bold">{isArabic ? 'لا توجد نتائج مطابقة.' : 'No matching results found.'}</div>
-                  <div>{isArabic ? 'جرّب اسم المطرب أو عنوان الأغنية أو جزءًا من الاسم.' : 'Try an artist name, a song title, or a few words from the name.'}</div>
+                      <button
+                        onClick={() => {
+                          setPendingPlaylistTrack(audioItem);
+                          setShowPlaylistPicker(true);
+                        }}
+                        className="p-1.5 rounded-lg border"
+                        style={{
+                          backgroundColor: themeColors.surfaceVariant,
+                          borderColor: themeColors.border,
+                        }}
+                        title="Playlist"
+                      >
+                        <ListPlus className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => downloadAudius(track)}
+                        className="p-1.5 rounded-lg border"
+                        style={{
+                          backgroundColor: themeColors.surfaceVariant,
+                          borderColor: themeColors.border,
+                        }}
+                        title={isArabic ? 'تنزيل' : 'Download'}
+                      >
+                        <Download className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => onSendToDeckA(audioItem)}
+                        className="px-1.5 py-1 rounded text-[10px] font-bold border"
+                        style={{
+                          borderColor: themeColors.accentA,
+                          color: themeColors.accentA,
+                        }}
+                      >
+                        A
+                      </button>
+                      <button
+                        onClick={() => onSendToDeckB(audioItem)}
+                        className="px-1.5 py-1 rounded text-[10px] font-bold border"
+                        style={{
+                          borderColor: themeColors.accentB,
+                          color: themeColors.accentB,
+                        }}
+                      >
+                        B
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (entry.kind === 'SECTION') {
+                const link = entry.link;
+                return (
+                  <button
+                    key={`${link.url}_${idx}`}
+                    onClick={() => openSection(link)}
+                    className="rounded-xl border p-2.5 flex items-center gap-2.5 text-left transition-all hover:scale-[1.01] h-[62px]"
+                    style={{
+                      backgroundColor: themeColors.surface,
+                      borderColor: themeColors.border,
+                    }}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                      style={{
+                        backgroundColor: `${themeColors.primary}20`,
+                        color: themeColors.primary,
+                      }}
+                    >
+                      <Disc className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-xs truncate">{link.title}</div>
+                    </div>
+                  </button>
+                );
+              }
+
+              const link = entry.link;
+              return (
+                <div
+                  key={`${link.url}_${idx}`}
+                  className="rounded-xl border p-2 flex items-center gap-2 h-[62px]"
+                  style={{
+                    backgroundColor: themeColors.surface,
+                    borderColor: themeColors.border,
+                  }}
+                >
+                  <div
+                    onClick={() => playCatalogLink(link)}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 cursor-pointer"
+                    style={{
+                      backgroundColor: `${themeColors.primary}20`,
+                      color: themeColors.primary,
+                    }}
+                  >
+                    <Music2 className="w-4 h-4" />
+                  </div>
+                  <div
+                    onClick={() => playCatalogLink(link)}
+                    className="min-w-0 flex-1 cursor-pointer"
+                  >
+                    <div className="font-bold text-xs truncate" title={link.title}>
+                      {link.title}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => playCatalogLink(link)}
+                      className="p-1.5 rounded-lg text-white"
+                      style={{ backgroundColor: themeColors.primary }}
+                      title={isArabic ? 'تشغيل' : 'Play'}
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                    </button>
+                    <button
+                      onClick={() => enqueueCatalogLink(link)}
+                      className="p-1.5 rounded-lg border"
+                      style={{
+                        backgroundColor: themeColors.surfaceVariant,
+                        borderColor: themeColors.border,
+                      }}
+                      title="Queue"
+                    >
+                      <ListMusic className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => openPlaylistModalForCatalogLink(link)}
+                      className="p-1.5 rounded-lg border"
+                      style={{
+                        backgroundColor: themeColors.surfaceVariant,
+                        borderColor: themeColors.border,
+                      }}
+                      title="Playlist"
+                    >
+                      <ListPlus className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => downloadCatalogLink(link)}
+                      className="p-1.5 rounded-lg border"
+                      style={{
+                        backgroundColor: themeColors.surfaceVariant,
+                        borderColor: themeColors.border,
+                      }}
+                      title={isArabic ? 'تنزيل' : 'Download'}
+                    >
+                      <Download className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => sendCatalogLinkToDeck(link, 'A')}
+                      className="px-1.5 py-1 rounded text-[10px] font-bold border"
+                      style={{
+                        borderColor: themeColors.accentA,
+                        color: themeColors.accentA,
+                      }}
+                    >
+                      A
+                    </button>
+                    <button
+                      onClick={() => sendCatalogLinkToDeck(link, 'B')}
+                      className="px-1.5 py-1 rounded text-[10px] font-bold border"
+                      style={{
+                        borderColor: themeColors.accentB,
+                        color: themeColors.accentB,
+                      }}
+                    >
+                      B
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <>
-                  <OnlineSection
-                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — الأقسام' : 'Search results — Sections') : (isArabic ? 'الأقسام' : 'Sections')}
-                    links={activeAlbumaty.categories}
-                    themeColors={themeColors}
-                    onOpen={openAlbumatyLink}
-                  />
-                  <OnlineSection
-                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — الألبومات' : 'Search results — Albums') : (isArabic ? 'أحدث الألبومات' : 'New Albums')}
-                    links={activeAlbumaty.albums}
-                    themeColors={themeColors}
-                    onOpen={openAlbumatyLink}
-                  />
-                  <OnlineSection
-                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — الأغاني' : 'Search results — Songs') : (isArabic ? 'أحدث الأغاني' : 'New Songs')}
-                    links={activeAlbumaty.songs}
-                    themeColors={themeColors}
-                    onOpen={playAlbumaty}
-                    song
-                    renderSong={renderAlbumatySongCard}
-                  />
-                  <OnlineSection
-                    title={albumatySearchResults ? (isArabic ? 'نتائج البحث — المطربون' : 'Search results — Artists') : (isArabic ? 'نتائج البحث — المطربون' : 'Artists')}
-                    links={activeAlbumaty.artists}
-                    themeColors={themeColors}
-                    onOpen={openAlbumatyLink}
-                  />
-                </>
-              )}
-              {message && <div className="px-1 text-xs opacity-70">{message}</div>}
-            </div>
-          )
-        ) : (
-          <div className="space-y-2">
-            {filteredAudius.length === 0 ? (
-              <div className="py-12 text-center text-xs opacity-60">
-                {isArabic ? 'لا توجد نتائج.' : 'No tracks found.'}
-              </div>
-            ) : (
-              filteredAudius.map(renderAudiusCard)
-            )}
-            {message && <div className="px-1 text-xs opacity-70">{message}</div>}
+              );
+            })}
           </div>
         )}
       </div>
 
+      {/* Pagination Bar */}
+      <div
+        className="mt-2 pt-2 border-t flex items-center justify-between text-xs shrink-0"
+        style={{ borderColor: themeColors.border }}
+      >
+        <div className="opacity-70 text-[11px]">
+          {isArabic
+            ? `العناصر: ${currentItems.length} • صفحة ${safePage} من ${totalPages}`
+            : `Items: ${currentItems.length} • Page ${safePage} of ${totalPages}`}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={safePage <= 1}
+            className="px-2.5 py-1 rounded-lg border disabled:opacity-40 flex items-center gap-1 text-[11px] font-semibold"
+            style={{
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+            }}
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            {isArabic ? 'السابق' : 'Prev'}
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={safePage >= totalPages}
+            className="px-2.5 py-1 rounded-lg border disabled:opacity-40 flex items-center gap-1 text-[11px] font-semibold"
+            style={{
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+            }}
+          >
+            {isArabic ? 'التالي' : 'Next'}
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Playlist Picker Modal */}
       {showPlaylistPicker && pendingPlaylistTrack && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border p-4 shadow-2xl space-y-3" style={{ backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.textPrimary }}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-sm font-black">{isArabic ? 'إضافة إلى قائمة تشغيل' : 'Add to playlist'}</h2>
-                <p className="text-xs opacity-70 mt-1 truncate">{pendingPlaylistTrack.title} — {pendingPlaylistTrack.artist}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-md rounded-2xl border p-4 space-y-3"
+            style={{
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+              color: themeColors.textPrimary,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-sm">
+                {isArabic ? 'إضافة إلى قائمة تشغيل' : 'Add to Playlist'}
               </div>
-              <button onClick={() => { setShowPlaylistPicker(false); setPendingPlaylistTrack(null); setNewPlaylistName(''); }} className="p-2 rounded-lg border" style={{ borderColor: themeColors.border }} aria-label={isArabic ? 'إغلاق' : 'Close'}><X className="w-4 h-4" /></button>
+              <button
+                onClick={() => {
+                  setShowPlaylistPicker(false);
+                  setPendingPlaylistTrack(null);
+                }}
+                className="p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            {playlists.length > 0 ? (
-              <div className="space-y-2">
-                {playlists.map((playlist) => <button key={playlist.id} onClick={() => void choosePlaylist(playlist.id)} disabled={playlistBusy} className="w-full rounded-xl border p-3 text-left text-xs font-bold flex items-center justify-between gap-3 disabled:opacity-50" style={{ borderColor: themeColors.border, backgroundColor: themeColors.surfaceVariant }}><span className="truncate">{playlist.name}</span><span className="text-[10px] opacity-60 shrink-0">{playlist.songCount} {isArabic ? 'أغنية' : 'songs'}</span></button>)}
-              </div>
-            ) : <p className="text-xs opacity-70">{isArabic ? 'لا توجد قوائم بعد؛ أنشئ قائمة جديدة أدناه.' : 'No playlists yet. Create one below.'}</p>}
-            <div className="border-t pt-3 space-y-2" style={{ borderColor: themeColors.border }}>
-              <label className="block text-xs font-bold">{isArabic ? 'أو أنشئ قائمة جديدة' : 'Or create a new playlist'}</label>
-              <input value={newPlaylistName} onChange={(event) => setNewPlaylistName(event.target.value)} placeholder={isArabic ? 'اسم قائمة التشغيل' : 'Playlist name'} className="w-full rounded-xl border px-3 py-2 text-xs outline-none" style={{ borderColor: themeColors.border, backgroundColor: themeColors.surfaceVariant, color: themeColors.textPrimary }} />
-              <button onClick={() => void createPlaylistAndAdd()} disabled={playlistBusy || !newPlaylistName.trim()} className="w-full rounded-xl px-3 py-2.5 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: themeColors.primary, color: '#fff' }}><Plus className="w-4 h-4" />{playlistBusy ? (isArabic ? 'جاري الحفظ...' : 'Saving...') : (isArabic ? 'إنشاء وإضافة الأغنية' : 'Create & add track')}</button>
+            <div className="text-xs opacity-70 truncate">{pendingPlaylistTrack.title}</div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newPlaylistName}
+                onChange={(e) => setNewPlaylistName(e.target.value)}
+                placeholder={isArabic ? 'اسم قائمة جديدة...' : 'New playlist name...'}
+                className="flex-1 px-2.5 py-1.5 rounded-lg border text-xs outline-none"
+                style={{
+                  backgroundColor: themeColors.surfaceVariant,
+                  borderColor: themeColors.border,
+                  color: themeColors.textPrimary,
+                }}
+              />
+              <button
+                onClick={handleCreateAndAdd}
+                disabled={playlistBusy || !newPlaylistName.trim()}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1 disabled:opacity-40"
+                style={{ backgroundColor: themeColors.primary }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {isArabic ? 'إنشاء' : 'Create'}
+              </button>
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1.5">
+              {playlists.map((pl) => (
+                <button
+                  key={pl.id}
+                  onClick={() => handleSelectPlaylist(pl.id)}
+                  disabled={playlistBusy}
+                  className="w-full px-3 py-2 rounded-lg border text-left flex items-center justify-between text-xs font-semibold"
+                  style={{
+                    backgroundColor: themeColors.surfaceVariant,
+                    borderColor: themeColors.border,
+                  }}
+                >
+                  <span className="truncate">{pl.name}</span>
+                  <span className="opacity-60">{pl.songCount}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -905,77 +1236,3 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
     </div>
   );
 };
-
-const OnlineSection: React.FC<{
-  title: string;
-  links: AlbumatyLink[];
-  themeColors: ThemeColors;
-  onOpen: (link: AlbumatyLink) => void;
-  song?: boolean;
-  renderSong?: (link: AlbumatyLink) => React.ReactNode;
-}> = ({ title, links, themeColors, onOpen, song, renderSong }) => {
-  if (links.length === 0) return null;
-
-  return (
-    <section>
-      <div className="flex items-center gap-2 mb-2 px-1">
-        {song ? (
-          <Music2 className="w-4 h-4" style={{ color: themeColors.primary }} />
-        ) : (
-          <Sparkles className="w-4 h-4" style={{ color: themeColors.primary }} />
-        )}
-        <h2 className="text-sm font-black">{title}</h2>
-      </div>
-      <div className="space-y-2">
-        {links.slice(0, song ? 100 : 60).map((link) =>
-          song ? (
-            renderSong ? renderSong(link) : <AlbumatySongRow key={link.url} link={link} onPlay={onOpen} themeColors={themeColors} />
-          ) : (
-            <button
-              key={link.url}
-              onClick={() => onOpen(link)}
-              className="w-full text-left rounded-2xl border px-3 py-2.5 text-xs font-bold"
-              style={{
-                backgroundColor: themeColors.surface,
-                borderColor: themeColors.border,
-              }}
-            >
-              {link.title}
-            </button>
-          )
-        )}
-      </div>
-    </section>
-  );
-};
-
-const AlbumatySongRow: React.FC<{
-  link: AlbumatyLink;
-  onPlay: (link: AlbumatyLink) => void;
-  themeColors: ThemeColors;
-}> = ({ link, onPlay, themeColors }) => (
-  <div
-    className="rounded-2xl border p-3 flex items-center gap-3"
-    style={{
-      backgroundColor: themeColors.surface,
-      borderColor: themeColors.border,
-    }}
-  >
-    <Music2 className="w-5 h-5 shrink-0 opacity-70" />
-    <div className="min-w-0 flex-1">
-      <div className="font-bold text-xs truncate" title={link.title}>
-        {link.title}
-      </div>
-      <div className="text-[10px] opacity-50 truncate" title={link.url}>
-        {link.url}
-      </div>
-    </div>
-    <button
-      onClick={() => onPlay(link)}
-      className="p-2 rounded-xl"
-      aria-label="Play"
-    >
-      <Play className="w-4 h-4 fill-current" style={{ color: themeColors.primary }} />
-    </button>
-  </div>
-);

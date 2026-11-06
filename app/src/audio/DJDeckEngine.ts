@@ -92,6 +92,7 @@ export class DJDeckEngine {
   public isPlaying = false;
   public volume = 1.0;
   private crossfadeVolume = 1.0;
+  private fallbackIndex = 0;
   private onUpdateCallbacks: Array<() => void> = [];
 
   constructor(name: string) {
@@ -132,6 +133,20 @@ export class DJDeckEngine {
       this.onTrackEndedCallbacks.forEach((callback) => {
         try { callback(); } catch (error) { console.warn('DJ deck auto-fill callback failed:', error); }
       });
+    });
+    this.audioElement.addEventListener('error', () => {
+      const fallbacks = this.currentTrack?.fallbackUris;
+      if (fallbacks && this.fallbackIndex < fallbacks.length) {
+        const nextUri = fallbacks[this.fallbackIndex++];
+        if (nextUri) {
+          console.warn(`DJ Deck ${this.deckName} stream failed; failing over to backup stream:`, nextUri);
+          this.audioElement.src = nextUri;
+          this.audioElement.load();
+          this.enforcePitchPreservation();
+          this.applyPitchAndEffect();
+          void this.audioElement.play().catch(() => {});
+        }
+      }
     });
     this.audioElement.addEventListener('timeupdate', () => this.notify());
     this.audioElement.addEventListener('durationchange', () => this.notify());
@@ -325,6 +340,7 @@ export class DJDeckEngine {
     this.loopStartMs = 0;
     this.loopEndMs = 0;
     this.currentTrack = track;
+    this.fallbackIndex = 0;
     this.audioElement.src = track.uri;
     this.audioElement.load();
     this.enforcePitchPreservation();

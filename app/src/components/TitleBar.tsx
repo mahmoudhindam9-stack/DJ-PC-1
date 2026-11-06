@@ -9,15 +9,14 @@ import {
   Disc,
   Music,
   Globe,
+  BookOpen,
   Settings,
   Languages,
   Palette,
   Sparkles,
-  Monitor,
 } from 'lucide-react';
 import { TabType, AppThemeOption, ThemeColors } from '../types';
 import { THEMES } from '../utils/theme';
-import { PWAInstallButton } from './desktop/PWAInstallButton';
 import { APP_VERSION } from '../services/UpdateService';
 
 interface TitleBarProps {
@@ -40,8 +39,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   isArabic,
   onToggleLanguage,
   themeColors,
-  onOpenSetupModal,
-  onOpenControlPanel,
 }) => {
   const tabs: Array<{ id: TabType; labelEn: string; labelAr: string; icon: React.ReactNode }> = [
     { id: 'LIBRARY', labelEn: 'Library', labelAr: 'المكتبة', icon: <Music className="w-4 h-4" /> },
@@ -50,6 +47,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     { id: 'KARAOKE', labelEn: 'Karaoke', labelAr: 'كاريوكي استوديو', icon: <Mic className="w-4 h-4" /> },
     { id: 'RADIO', labelEn: 'Radio FM', labelAr: 'راديو مباشر', icon: <Radio className="w-4 h-4" /> },
     { id: 'ONLINE_MUSIC', labelEn: 'Online Music', labelAr: 'موسيقى أونلاين', icon: <Globe className="w-4 h-4" /> },
+    { id: 'QURAN', labelEn: 'Holy Quran', labelAr: 'القرآن الكريم', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'AI_STUDIO', labelEn: 'AI Studio', labelAr: 'استوديو الذكاء الاصطناعي', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'SETTINGS', labelEn: 'Settings', labelAr: 'الإعدادات', icon: <Settings className="w-4 h-4" /> },
   ];

@@ -180,23 +180,19 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         </span>
       </div>
 
-      {/* Automatic overlap duration, rather than a manual A/B mix fader. */}
-      <div className="flex items-center gap-3 rounded-lg border px-3 py-2" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border }}>
-        <div className="shrink-0 min-w-[116px]">
-          <div className="text-[10px] font-black tracking-wider" style={{ color: themeColors.primary }}>{isArabic ? 'تداخل الأغاني' : 'CROSSFADE'}</div>
-          <div className="text-[10px] opacity-65">{isArabic ? 'مدة التداخل' : 'Overlap duration'}</div>
-        </div>
-        <span className="text-[11px] font-mono font-bold tabular-nums w-7 text-right">{crossfadeDurationSeconds}s</span>
+      {/* Automatic overlap duration */}
+      <div className="flex items-center gap-2.5 rounded-lg border px-2.5 py-1" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.border }}>
+        <div className="text-[10px] font-black tracking-wider shrink-0" style={{ color: themeColors.primary }}>{isArabic ? 'تداخل الأغاني' : 'CROSSFADE'}</div>
+        <span className="text-[11px] font-mono font-bold tabular-nums w-6 text-right">{crossfadeDurationSeconds}s</span>
         <input
           type="range" min={0} max={15} step={1} value={crossfadeDurationSeconds}
           onChange={(event) => { const seconds = Number(event.target.value); onCrossfadeDurationChange(seconds); announceAction(isArabic ? `مدة التداخل: ${seconds} ثانية` : `Crossfade duration: ${seconds}s`); }}
           aria-label={isArabic ? 'مدة التداخل بين الأغاني من صفر إلى 15 ثانية' : 'Automatic song crossfade duration, zero to 15 seconds'}
           title={isArabic ? 'صفر = بدون تداخل، 15 = أطول تداخل' : '0 = no overlap; 15 = longest overlap'}
-          className="flex-1 h-2 rounded-full appearance-none cursor-ew-resize"
+          className="flex-1 h-1.5 rounded-full appearance-none cursor-ew-resize"
           style={{ accentColor: themeColors.primary, backgroundColor: themeColors.border }}
         />
-        <div className="flex items-center justify-between gap-2 text-[9px] opacity-60 w-10"><span>0</span><span>15</span></div>
-        <span className="text-[10px] opacity-65">sec</span>
+        <div className="flex items-center justify-between gap-1.5 text-[9px] opacity-60 w-8"><span>0</span><span>15</span></div>
       </div>
 
       {/* Controls Row */}

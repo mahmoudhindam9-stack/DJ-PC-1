@@ -21,6 +21,7 @@ import { EqualizerScreen } from './components/screens/EqualizerScreen';
 import { KaraokeScreen } from './components/screens/KaraokeScreen';
 import { RadioScreen } from './components/screens/RadioScreen';
 import { OnlineMusicScreen } from './components/screens/OnlineMusicScreen';
+import { QuranScreen } from './components/screens/QuranScreen';
 import { AIMusicStudioScreen } from './components/screens/AIMusicStudioScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { batchImportAudioFiles } from './utils/fileImporter';
@@ -630,6 +631,7 @@ export const App: React.FC = () => {
       album: station.tags || 'Broadcasting',
       duration: 0,
       uri: station.streamUrls[0] || '',
+      fallbackUris: station.streamUrls.slice(1),
       addedDate: Date.now(),
     };
 
@@ -1045,6 +1047,35 @@ export const App: React.FC = () => {
             onAddSongToPlaylist={handleAddSongToPlaylist}
             onCreatePlaylist={handleCreatePlaylist}
             onOpenQueue={() => setShowQueue(true)}
+          />
+        )}
+
+        {activeTab === 'QURAN' && (
+          <QuranScreen
+            themeColors={themeColors}
+            isArabic={isArabic}
+            currentPlayingId={currentSong?.id}
+            isPlaying={isPlaying}
+            playlists={playlists}
+            favoriteIds={new Set(library.filter((s) => s.isFavorite).map((s) => s.id))}
+            onPlayTrack={handlePlaySong}
+            onEnqueueTrack={handleEnqueueSong}
+            onSaveToLibrary={async (track) => {
+              await db.addSong(track);
+              setLibrary((current) => [track, ...current.filter((song) => song.id !== track.id)]);
+            }}
+            onToggleFavorite={handleToggleFavorite}
+            onAddToPlaylist={(playlistId, item) => {
+              void handleAddSongToPlaylist(playlistId, item);
+            }}
+            onCreatePlaylistAndAdd={(name, item) => {
+              void (async () => {
+                const created = await handleCreatePlaylist(name);
+                await handleAddSongToPlaylist(created.id, item);
+              })();
+            }}
+            onSendToDeckA={handleSendToDeckA}
+            onSendToDeckB={handleSendToDeckB}
           />
         )}
 

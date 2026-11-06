@@ -75,6 +75,21 @@ export class AudioEngine {
     this.onEndedListeners.forEach((fn) => fn());
   };
 
+  private fallbackIndex = 0;
+
+  private readonly primaryErrorHandler = () => {
+    const fallbacks = this.currentTrack?.fallbackUris;
+    if (fallbacks && this.fallbackIndex < fallbacks.length) {
+      const nextUri = fallbacks[this.fallbackIndex++];
+      if (nextUri) {
+        console.warn(`Primary stream failed; failing over to backup stream (${this.fallbackIndex}/${fallbacks.length}):`, nextUri);
+        this.audioElement.src = nextUri;
+        this.audioElement.load();
+        void this.audioElement.play().catch(() => {});
+      }
+    }
+  };
+
   constructor() {
     this.audioElement = new Audio();
     this.audioElement.preload = 'auto';
@@ -93,6 +108,7 @@ export class AudioEngine {
     this.audioElement.addEventListener('play', this.primaryPlayHandler);
     this.audioElement.addEventListener('pause', this.primaryPauseHandler);
     this.audioElement.addEventListener('ended', this.primaryEndedHandler);
+    this.audioElement.addEventListener('error', this.primaryErrorHandler);
   }
 
   private detachPrimaryListeners(): void {
@@ -100,6 +116,7 @@ export class AudioEngine {
     this.audioElement.removeEventListener('play', this.primaryPlayHandler);
     this.audioElement.removeEventListener('pause', this.primaryPauseHandler);
     this.audioElement.removeEventListener('ended', this.primaryEndedHandler);
+    this.audioElement.removeEventListener('error', this.primaryErrorHandler);
   }
 
   private ensureAudioContext(): AudioContext {
@@ -209,6 +226,7 @@ export class AudioEngine {
     this.crossfadeAudioElement.removeAttribute('src');
     this.crossfadeAudioElement.load();
     this.currentTrack = item;
+    this.fallbackIndex = 0;
     this.standbyTrack = null;
     this.crossfadeTrackId = null;
     this.crossfadeTrackUri = null;

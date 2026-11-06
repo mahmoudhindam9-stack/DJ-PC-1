@@ -73,9 +73,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <h1 className="text-lg font-black tracking-wide">
             {isArabic ? 'إعدادات التطبيق' : 'APPLICATION SETTINGS'}
           </h1>
-          <p className="text-xs" style={{ color: themeColors.textMuted }}>
-            Appearance, Audio Engine, Regional & System Configurations
-          </p>
         </div>
       </div>
 
@@ -107,7 +104,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <div className="text-left">
               <div>English (Left-to-Right)</div>
-              <span className="text-[10px] opacity-60 font-normal">Default desktop mode</span>
             </div>
             {!isArabic && <Check className="w-4 h-4" style={{ color: themeColors.primary }} />}
           </button>
@@ -124,7 +120,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <div className="text-right">
               <div>العربية (من اليمين إلى اليسار)</div>
-              <span className="text-[10px] opacity-60 font-normal">تخطيط RTL كامل</span>
             </div>
             {isArabic && <Check className="w-4 h-4" style={{ color: themeColors.primary }} />}
           </button>
@@ -244,12 +239,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </span>
         </div>
 
-        <p className="text-xs leading-relaxed opacity-80">
-          {isArabic
-            ? 'يحتوي البرنامج على ملف setup.bat للتثبيت التلقائي وملف uninstall.bat لإلغاء التثبيت وحذف جميع الملفات المثبتة. جميع الملفات الأخرى منظمة ومرتبة داخل مجلدات.'
-            : 'Includes setup.bat for automated installation and uninstall.bat for complete removal of installed files. All other files are neatly organized inside dedicated subfolders.'}
-        </p>
-
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
             onClick={onOpenSetupModal}
@@ -307,7 +296,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <RefreshCw className="w-5 h-5" style={{ color: themeColors.primary }} />
           <div>
             <h2 className="font-bold text-sm">{isArabic ? 'التحديثات والإصدار' : 'Updates & Version'}</h2>
-            <p className="text-xs mt-0.5" style={{ color: themeColors.textMuted }}>{isArabic ? 'فحص يدوي وتحديث تلقائي عند توفر إصدار أحدث.' : 'Manually check for updates or enable automatic checks and installation.'}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -320,11 +308,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <div className="font-mono text-sm font-bold mt-1">v{updateInfo?.latestVersion || '—'}</div>
           </div>
         </div>
-        <label className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer" style={{ borderColor: themeColors.border }}>
-          <input type="checkbox" checked={autoUpdatesEnabled} onChange={(event) => onAutoUpdatesEnabledChange(event.target.checked)} className="mt-0.5 h-4 w-4" />
+        <label className="flex items-center gap-3 rounded-xl border p-3 cursor-pointer" style={{ borderColor: themeColors.border }}>
+          <input type="checkbox" checked={autoUpdatesEnabled} onChange={(event) => onAutoUpdatesEnabledChange(event.target.checked)} className="h-4 w-4" />
           <span className="min-w-0">
             <span className="block text-xs font-bold">{isArabic ? 'البحث والتحديث التلقائي' : 'Automatic update checks and installation'}</span>
-            <span className="block text-[11px] mt-1 opacity-70 leading-relaxed">{isArabic ? 'يفحص عند تشغيل البرنامج وكل 24 ساعة؛ ويؤجل التثبيت حتى يتوقف الصوت.' : 'Checks on startup and every 24 hours. Installation is deferred while audio plays.'}</span>
           </span>
         </label>
         <div className="flex flex-wrap items-center gap-2">

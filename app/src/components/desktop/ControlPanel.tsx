@@ -347,7 +347,6 @@ export const ControlPanel: React.FC = () => {
           <button onClick={() => sendCommand({ action: 'next' })} className="w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95" style={{ backgroundColor: surfaceVariant }} title={isArabic ? 'التالي' : 'Next'}><SkipForward className="w-4 h-4" /></button>
         </div>
         <div className="flex items-center gap-2 text-xs" style={{ color: muted }}><Volume2 className="w-4 h-4 shrink-0" /><input type="range" min={0} max={1} step={0.01} value={player?.volume ?? 0.85} onChange={(event) => sendCommand({ action: 'volume', value: Number(event.target.value) })} className="flex-1 cursor-pointer" style={{ accentColor: accent }} aria-label={isArabic ? 'مستوى الصوت' : 'Volume'} /><span className="w-8 text-right tabular-nums">{Math.round((player?.volume ?? 0.85) * 100)}%</span></div>
-        {player && !player.song && <p className="text-[10px]" style={{ color: muted }}>{isArabic ? 'يمكنك التحكم بالمشغل هنا بعد تشغيل أول أغنية.' : 'Controls will sync as soon as a track is selected in the main player.'}</p>}
       </section>
 
       <section className="rounded-2xl border p-4 space-y-3" style={cardStyle}>
@@ -394,7 +393,6 @@ export const ControlPanel: React.FC = () => {
             });
           })()}
         </div>
-        <div className="text-[9px]" style={{ color: muted }}>{isArabic ? 'احتمال الهطول أسفل كل ساعة.' : 'Precipitation chance is shown below each hour.'}</div>
       </section>}
 
       {weather && <section className="rounded-2xl border p-4 space-y-3" style={cardStyle}>
@@ -412,10 +410,7 @@ export const ControlPanel: React.FC = () => {
             </div>;
           })}
         </div>
-        <div className="text-[9px]" style={{ color: muted }}>{isArabic ? 'مصدر الطقس: Open-Meteo. يلزم اتصال بالإنترنت.' : 'Weather by Open-Meteo. An internet connection is required.'}</div>
       </section>}
-
-      <footer className="text-center text-[9px] pb-1" style={{ color: muted }}>DJ Desktop · {isArabic ? 'لوحة مستقلة للمشغل والوقت والطقس' : 'Independent player, clock and weather panel'}</footer>
     </main>
   );
 };

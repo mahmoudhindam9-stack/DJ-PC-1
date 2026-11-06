@@ -20,7 +20,6 @@ import { samplerEngine } from '../../audio/SamplerEngine';
 import { AUDIO_INPUT_ACCEPT, pickLocalAudioFolder } from '../../utils/fileImporter';
 import './DJMixerScreen.css';
 
-
 type MixerBank = 'A' | 'B' | 'C' | 'D';
 
 interface SavedDeckSettings {
@@ -39,12 +38,26 @@ interface SavedMixerSettings {
 }
 
 const DJ_MIXER_STATE_KEY = 'dj-mixer-state-v1';
-const DJ_MIXER_SCROLL_KEY = 'dj-mixer-scroll-v1';
 const SAVED_DJ_EFFECTS: DJEffectType[] = [
-  'none', 'fx_filter', 'fx_delay', 'fx_reverb', 'fx_flanger', 'fx_phaser',
-  'fx_bitcrush', 'fx_distortion', 'fx_compressor',
-  'voice_chipmunk', 'voice_robot', 'voice_monster', 'voice_demon', 'voice_giant',
-  'voice_kid', 'voice_woman', 'voice_telephone', 'voice_radio', 'voice_alien',
+  'none',
+  'fx_filter',
+  'fx_delay',
+  'fx_reverb',
+  'fx_flanger',
+  'fx_phaser',
+  'fx_bitcrush',
+  'fx_distortion',
+  'fx_compressor',
+  'voice_chipmunk',
+  'voice_robot',
+  'voice_monster',
+  'voice_demon',
+  'voice_giant',
+  'voice_kid',
+  'voice_woman',
+  'voice_telephone',
+  'voice_radio',
+  'voice_alien',
 ];
 
 const clampMixerValue = (value: number, min: number, max: number) =>
@@ -68,19 +81,39 @@ function readSavedMixerSettings(): SavedMixerSettings {
       if (!value || typeof value !== 'object') return fallback;
       const raw = value as Record<string, unknown>;
       return {
-        volume: typeof raw.volume === 'number' ? clampMixerValue(raw.volume, 0, 1) : fallback.volume,
-        pitch: typeof raw.pitch === 'number' ? clampMixerValue(raw.pitch, 0.5, 1.5) : fallback.pitch,
-        effect: typeof raw.effect === 'string' && SAVED_DJ_EFFECTS.includes(raw.effect as DJEffectType)
-          ? raw.effect as DJEffectType
-          : fallback.effect,
-        fxAmount: typeof raw.fxAmount === 'number' ? clampMixerValue(raw.fxAmount, 0, 1) : fallback.fxAmount,
+        volume:
+          typeof raw.volume === 'number'
+            ? clampMixerValue(raw.volume, 0, 1)
+            : fallback.volume,
+        pitch:
+          typeof raw.pitch === 'number'
+            ? clampMixerValue(raw.pitch, 0.5, 1.5)
+            : fallback.pitch,
+        effect:
+          typeof raw.effect === 'string' &&
+          SAVED_DJ_EFFECTS.includes(raw.effect as DJEffectType)
+            ? (raw.effect as DJEffectType)
+            : fallback.effect,
+        fxAmount:
+          typeof raw.fxAmount === 'number'
+            ? clampMixerValue(raw.fxAmount, 0, 1)
+            : fallback.fxAmount,
       };
     };
     const bank = parsed.selectedBank;
     return {
-      crossfader: typeof parsed.crossfader === 'number' ? clampMixerValue(parsed.crossfader, 0, 1) : defaults.crossfader,
-      selectedBank: bank === 'A' || bank === 'B' || bank === 'C' || bank === 'D' ? bank : defaults.selectedBank,
-      samplerVolume: typeof parsed.samplerVolume === 'number' ? clampMixerValue(parsed.samplerVolume, 0, 1) : defaults.samplerVolume,
+      crossfader:
+        typeof parsed.crossfader === 'number'
+          ? clampMixerValue(parsed.crossfader, 0, 1)
+          : defaults.crossfader,
+      selectedBank:
+        bank === 'A' || bank === 'B' || bank === 'C' || bank === 'D'
+          ? bank
+          : defaults.selectedBank,
+      samplerVolume:
+        typeof parsed.samplerVolume === 'number'
+          ? clampMixerValue(parsed.samplerVolume, 0, 1)
+          : defaults.samplerVolume,
       deckA: readDeck(parsed.deckA, defaults.deckA),
       deckB: readDeck(parsed.deckB, defaults.deckB),
     };
@@ -89,264 +122,134 @@ function readSavedMixerSettings(): SavedMixerSettings {
   }
 }
 
-interface RotaryVolumeKnobProps {
-  value: number;
+interface TurntablePlatterProps {
+  deckId: 'A' | 'B';
   accent: string;
-  textColor: string;
-  mutedColor: string;
-  label: string;
-  onChange: (value: number) => void;
-}
-
-const RotaryVolumeKnob: React.FC<RotaryVolumeKnobProps> = ({
-  value, accent, textColor, mutedColor, label, onChange,
-}) => {
-  const dragRef = useRef<{ pointerId: number; startY: number; startValue: number } | null>(null);
-  const normalized = clampMixerValue(value, 0, 1);
-  const angle = -135 + normalized * 270;
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    let next: number | null = null;
-    switch (event.key) {
-      case 'ArrowUp':
-      case 'ArrowRight':
-        next = normalized + 0.02;
-        break;
-      case 'ArrowDown':
-      case 'ArrowLeft':
-        next = normalized - 0.02;
-        break;
-      case 'PageUp':
-        next = normalized + 0.1;
-        break;
-      case 'PageDown':
-        next = normalized - 0.1;
-        break;
-      case 'Home':
-        next = 0;
-        break;
-      case 'End':
-        next = 1;
-        break;
-      default:
-        return;
-    }
-    event.preventDefault();
-    onChange(clampMixerValue(next, 0, 1));
-  };
-
-  return (
-    <div className="flex min-w-[64px] flex-col items-center gap-1 select-none">
-      <span className="text-[9px] font-bold tracking-[0.14em]" style={{ color: mutedColor }}>{label}</span>
-      <div
-        role="slider"
-        tabIndex={0}
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(normalized * 100)}
-        aria-valuetext={Math.round(normalized * 100) + '%'}
-        onKeyDown={handleKeyDown}
-        onWheel={(event) => {
-          event.preventDefault();
-          onChange(clampMixerValue(normalized + (event.deltaY < 0 ? 0.02 : -0.02), 0, 1));
-        }}
-        onPointerDown={(event) => {
-          event.preventDefault();
-          dragRef.current = { pointerId: event.pointerId, startY: event.clientY, startValue: normalized };
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          const drag = dragRef.current;
-          if (!drag || drag.pointerId !== event.pointerId) return;
-          onChange(clampMixerValue(drag.startValue + (drag.startY - event.clientY) / 120, 0, 1));
-        }}
-        onPointerUp={(event) => {
-          if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
-        }}
-        onPointerCancel={() => { dragRef.current = null; }}
-        className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 cursor-ns-resize"
-        style={{ touchAction: 'none', lineHeight: 0 }}
-      >
-        <div
-          className="relative rounded-full border"
-          style={{
-            width: 54,
-            height: 54,
-            borderColor: accent + '99',
-            background: 'radial-gradient(circle at 28% 22%, ' + accent + '55, #111827 76%)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.28), inset 0 1px 2px rgba(255,255,255,0.12)',
-          }}
-        >
-          <div
-            className="absolute left-1/2 top-[7px] h-[20px] w-[3px] rounded-full"
-            style={{
-              backgroundColor: accent,
-              transform: 'translateX(-50%) rotate(' + angle + 'deg)',
-              transformOrigin: '50% 20px',
-              boxShadow: '0 0 8px ' + accent + '99',
-            }}
-          />
-          <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ backgroundColor: accent }} />
-        </div>
-      </div>
-      <span className="text-[11px] font-mono font-bold tabular-nums" style={{ color: textColor }}>
-        {Math.round(normalized * 100)}%
-      </span>
-    </div>
-  );
-};
-
-
-interface VinylScratchPlatterProps {
-  engine: typeof deckAEngine;
-  hasTrack: boolean;
   isPlaying: boolean;
   pitch: number;
-  accent: string;
-  isArabic: boolean;
-  deckLabel: 'A' | 'B';
+  hasTrack: boolean;
+  onBeginScratch: () => void;
+  onScratchDelta: (deltaSeconds: number, velocity: number) => void;
+  onEndScratch: () => void;
 }
 
-const VinylScratchPlatter: React.FC<VinylScratchPlatterProps> = ({
-  engine, hasTrack, isPlaying, pitch, accent, isArabic, deckLabel,
+const TurntablePlatter: React.FC<TurntablePlatterProps> = ({
+  deckId,
+  accent,
+  isPlaying,
+  pitch,
+  hasTrack,
+  onBeginScratch,
+  onScratchDelta,
+  onEndScratch,
 }) => {
   const discRef = useRef<HTMLDivElement>(null);
   const rotationRef = useRef(0);
-  const dragRef = useRef<{
-    pointerId: number;
-    lastPointerAngle: number;
-    startTimeMs: number;
-    totalAngle: number;
-    lastTimestamp: number;
-  } | null>(null);
   const [isScratching, setIsScratching] = useState(false);
+  const dragState = useRef<{
+    pointerId: number;
+    lastAngle: number;
+    lastTime: number;
+  } | null>(null);
 
   useEffect(() => {
-    if (!isPlaying || isScratching || !hasTrack) return;
-    let frameId = 0;
-    let previousTimestamp = 0;
-    const animateVinyl = (timestamp: number) => {
-      if (previousTimestamp > 0) {
-        const elapsed = Math.min(50, timestamp - previousTimestamp);
-        rotationRef.current = (rotationRef.current + elapsed * 0.2 * Math.max(0.5, pitch)) % 360;
+    let rafId = 0;
+    let lastTs = performance.now();
+
+    const tick = (now: number) => {
+      const dt = (now - lastTs) / 1000;
+      lastTs = now;
+      if (isPlaying && !dragState.current && discRef.current) {
+        rotationRef.current = (rotationRef.current + dt * 200 * pitch) % 360;
+        discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
       }
-      previousTimestamp = timestamp;
-      if (discRef.current) discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
-      frameId = window.requestAnimationFrame(animateVinyl);
+      rafId = requestAnimationFrame(tick);
     };
-    frameId = window.requestAnimationFrame(animateVinyl);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [hasTrack, isPlaying, isScratching, pitch]);
 
-  const getPointerAngle = (event: React.PointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return Math.atan2(
-      event.clientY - (rect.top + rect.height / 2),
-      event.clientX - (rect.left + rect.width / 2),
-    ) * 180 / Math.PI;
-  };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isPlaying, pitch]);
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!hasTrack) return;
-    event.preventDefault();
-    const timestamp = event.timeStamp || performance.now();
-    dragRef.current = {
-      pointerId: event.pointerId,
-      lastPointerAngle: getPointerAngle(event),
-      startTimeMs: engine.startScratch(),
-      totalAngle: 0,
-      lastTimestamp: timestamp,
-    };
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* pointer capture may be unavailable */ }
-    setIsScratching(true);
-  };
-
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-
-    const pointerAngle = getPointerAngle(event);
-    let deltaAngle = pointerAngle - drag.lastPointerAngle;
-    if (deltaAngle > 180) deltaAngle -= 360;
-    if (deltaAngle < -180) deltaAngle += 360;
-
-    const timestamp = event.timeStamp || performance.now();
-    const elapsed = Math.max(1, timestamp - drag.lastTimestamp);
-    drag.totalAngle += deltaAngle;
-    drag.lastPointerAngle = pointerAngle;
-    drag.lastTimestamp = timestamp;
-    rotationRef.current = (rotationRef.current + deltaAngle + 360) % 360;
-
-    if (discRef.current) discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
-    // One full vinyl turn moves about 1.8 seconds through the record. This makes
-    // clockwise/counter-clockwise hand movement scrub the song in both directions.
-    engine.scratchTo(drag.startTimeMs + drag.totalAngle * 5, deltaAngle * 5000 / elapsed);
-  };
-
-  const finishScratch = (pointerId?: number) => {
-    if (!dragRef.current || (pointerId !== undefined && dragRef.current.pointerId !== pointerId)) return;
-    dragRef.current = null;
-    engine.endScratch();
-    setIsScratching(false);
+  const computeAngle = (clientX: number, clientY: number) => {
+    const rect = discRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    return Math.atan2(clientY - cy, clientX - cx) * (180 / Math.PI);
   };
 
   return (
     <div className="dj-platter-stage">
-      <div className="dj-turntable-base" style={{ borderColor: accent + '55' }}>
-        <div className="dj-turntable-light" style={{ background: `radial-gradient(circle, ${accent}2b 0%, transparent 70%)` }} />
+      <div className="dj-turntable-base" style={{ borderColor: `${accent}55` }}>
+        <div
+          className="dj-turntable-light"
+          style={{
+            background: `radial-gradient(circle at 28% 50%, ${accent}25, transparent 70%)`,
+          }}
+        />
         <div className="dj-vinyl-shadow" />
         <div
           ref={discRef}
-          role="application"
-          tabIndex={hasTrack ? 0 : -1}
-          aria-label={isArabic
-            ? `أسطوانة الديك ${deckLabel}، اضغط واسحب لعمل سكراتش`
-            : `Deck ${deckLabel} vinyl, press and drag to scratch`}
-          aria-disabled={!hasTrack}
-          className={`dj-vinyl-disc ${isScratching ? 'is-scratching' : ''} ${!hasTrack ? 'is-empty' : ''}`}
-          style={{ outlineColor: accent }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={(event) => finishScratch(event.pointerId)}
-          onPointerCancel={(event) => finishScratch(event.pointerId)}
-          onLostPointerCapture={(event) => finishScratch(event.pointerId)}
-          onKeyDown={(event) => {
-            if (!hasTrack || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
-            event.preventDefault();
-            if (!dragRef.current) {
-              const startTimeMs = engine.startScratch();
-              dragRef.current = {
-                pointerId: -1,
-                lastPointerAngle: 0,
-                startTimeMs,
-                totalAngle: 0,
-                lastTimestamp: event.timeStamp || performance.now(),
-              };
-              setIsScratching(true);
+          className={`dj-vinyl-disc ${isScratching ? 'is-scratching' : ''} ${
+            !hasTrack ? 'is-empty' : ''
+          }`}
+          onPointerDown={(e) => {
+            if (!hasTrack) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            dragState.current = {
+              pointerId: e.pointerId,
+              lastAngle: computeAngle(e.clientX, e.clientY),
+              lastTime: performance.now(),
+            };
+            setIsScratching(true);
+            onBeginScratch();
+          }}
+          onPointerMove={(e) => {
+            const st = dragState.current;
+            if (!st || st.pointerId !== e.pointerId) return;
+            const now = performance.now();
+            const currentAngle = computeAngle(e.clientX, e.clientY);
+            let deltaDeg = currentAngle - st.lastAngle;
+            if (deltaDeg > 180) deltaDeg -= 360;
+            if (deltaDeg < -180) deltaDeg += 360;
+            const dt = Math.max(0.004, (now - st.lastTime) / 1000);
+            st.lastAngle = currentAngle;
+            st.lastTime = now;
+            rotationRef.current = (rotationRef.current + deltaDeg) % 360;
+            if (discRef.current) {
+              discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
             }
-            const drag = dragRef.current;
-            if (!drag) return;
-            const delta = event.key === 'ArrowRight' ? 18 : -18;
-            drag.totalAngle += delta;
-            rotationRef.current = (rotationRef.current + delta + 360) % 360;
-            if (discRef.current) discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
-            engine.scratchTo(drag.startTimeMs + drag.totalAngle * 5, delta * 18);
+            const deltaSeconds = (deltaDeg / 360) * 1.8;
+            const velocity = deltaSeconds / dt;
+            onScratchDelta(deltaSeconds, velocity);
           }}
-          onKeyUp={(event) => {
-            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') finishScratch(-1);
+          onPointerUp={(e) => {
+            const st = dragState.current;
+            if (!st || st.pointerId !== e.pointerId) return;
+            dragState.current = null;
+            setIsScratching(false);
+            onEndScratch();
           }}
-          onBlur={() => finishScratch(-1)}
+          onPointerCancel={() => {
+            if (!dragState.current) return;
+            dragState.current = null;
+            setIsScratching(false);
+            onEndScratch();
+          }}
         >
           <div className="dj-vinyl-highlight" />
-          <div className="dj-vinyl-label" style={{
-            borderColor: accent,
-            background: `radial-gradient(circle at 32% 28%, ${accent}dd, #17191f 78%)`,
-            boxShadow: `0 0 18px ${accent}45, inset 0 0 0 4px rgba(0,0,0,.35)`,
-          }}>
-            <span className="dj-vinyl-label-top">DJ STUDIO</span>
-            <span className="dj-vinyl-label-deck" style={{ color: '#fff' }}>{deckLabel}</span>
-            <span className="dj-vinyl-label-bottom">{hasTrack ? '33⅓ RPM' : 'NO TRACK'}</span>
+          <div
+            className="dj-vinyl-label"
+            style={{
+              backgroundColor: accent,
+              borderColor: '#ffffff55',
+            }}
+          >
+            <span className="dj-vinyl-label-top">DJ PRO</span>
+            <span className="dj-vinyl-label-deck">{deckId}</span>
+            <span className="dj-vinyl-label-bottom">
+              {Math.round(pitch * 100)}%
+            </span>
           </div>
           <div className="dj-vinyl-spindle" />
         </div>
@@ -354,15 +257,18 @@ const VinylScratchPlatter: React.FC<VinylScratchPlatterProps> = ({
           <span className="dj-tonearm-pivot" />
           <span className="dj-tonearm-shaft" />
           <span className="dj-tonearm-head" />
-          <span className="dj-tonearm-needle" />
         </div>
-        <div className="dj-turntable-led" style={{ backgroundColor: isScratching ? '#ffb74d' : (isPlaying ? '#00e676' : '#555b66') }} />
+        <div
+          className="dj-turntable-led"
+          style={{
+            backgroundColor: isScratching
+              ? '#ffb74d'
+              : isPlaying
+              ? '#00e676'
+              : '#555b66',
+          }}
+        />
       </div>
-      <p className={`dj-scratch-hint ${isScratching ? 'is-active' : ''}`} style={{ color: isScratching ? accent : undefined }}>
-        {isScratching
-          ? (isArabic ? 'SCRATCH شغال — حرّك الأسطوانة ذهابًا وإيابًا' : 'SCRATCH ACTIVE — move the vinyl back and forth')
-          : (isArabic ? 'اضغط على الأسطوانة واسحبها لعمل صوت DJ Scratch' : 'PRESS & DRAG THE VINYL TO SCRATCH')}
-      </p>
     </div>
   );
 };
@@ -383,9 +289,7 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   onImportFiles,
 }) => {
   const [savedSettings] = useState<SavedMixerSettings>(() => readSavedMixerSettings());
-  const scrollPositionRef = useRef(0);
-  const scrollSaveTimerRef = useRef<number | null>(null);
-  const [crossfader, setCrossfader] = useState(savedSettings.crossfader); // 0 = Deck A only, 1 = Deck B only
+  const [crossfader, setCrossfader] = useState(savedSettings.crossfader);
   const [deckAState, setDeckAState] = useState({
     track: deckAEngine.currentTrack,
     isPlaying: deckAEngine.isPlaying,
@@ -419,7 +323,11 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   const [trackSelectorDeck, setTrackSelectorDeck] = useState<'A' | 'B' | null>(null);
   const [beatSyncMessage, setBeatSyncMessage] = useState<string | null>(null);
   const [autoFillEnabled, setAutoFillEnabled] = useState(() => {
-    try { return window.localStorage.getItem('dj-mixer-auto-fill-v1') === 'true'; } catch { return false; }
+    try {
+      return window.localStorage.getItem('dj-mixer-auto-fill-v1') === 'true';
+    } catch {
+      return false;
+    }
   });
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -431,18 +339,11 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
       } else if (files && files.length > 0) {
         onImportFiles(files);
       }
-    } catch (error) {
-      console.warn('Could not import local music folder:', error);
+    } catch {
+      // ignore
     }
   };
 
-  const handleFolderInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    if (input.files && input.files.length > 0) onImportFiles(input.files);
-    input.value = '';
-  };
-
-  // Subscribe to deck updates
   useEffect(() => {
     const unsubA = deckAEngine.subscribe(() => {
       setDeckAState({
@@ -482,10 +383,29 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     };
   }, []);
 
-  // Auto Fill loads any empty deck from the library and keeps each deck supplied
-  // with the next library track when its current track finishes.
+  const getNextAutoFillTrack = (
+    current: AudioItem | null,
+    other: AudioItem | null
+  ): AudioItem | null => {
+    if (library.length === 0) return null;
+    const currentIndex = current
+      ? library.findIndex((track) => track.id === current.id)
+      : -1;
+    for (let step = 1; step <= library.length; step += 1) {
+      const index = (currentIndex + step + library.length) % library.length;
+      const candidate = library[index];
+      if (!candidate) continue;
+      if (library.length === 1 || candidate.id !== other?.id) return candidate;
+    }
+    return library[0] || null;
+  };
+
   useEffect(() => {
-    try { window.localStorage.setItem('dj-mixer-auto-fill-v1', String(autoFillEnabled)); } catch { /* optional persistence */ }
+    try {
+      window.localStorage.setItem('dj-mixer-auto-fill-v1', String(autoFillEnabled));
+    } catch {
+      // ignore
+    }
     if (!autoFillEnabled || library.length === 0) return;
 
     if (!deckAEngine.currentTrack) {
@@ -507,10 +427,12 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     };
     const offA = deckAEngine.onTrackEnded(() => autoLoadAndPlay('A'));
     const offB = deckBEngine.onTrackEnded(() => autoLoadAndPlay('B'));
-    return () => { offA(); offB(); };
+    return () => {
+      offA();
+      offB();
+    };
   }, [autoFillEnabled, library]);
 
-  // Restore and persist the complete DJ mixer control state between screen visits and app restarts.
   useEffect(() => {
     deckAEngine.setDeckVolume(savedSettings.deckA.volume);
     deckAEngine.setPitch(savedSettings.deckA.pitch);
@@ -544,49 +466,29 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
       };
       window.localStorage.setItem(DJ_MIXER_STATE_KEY, JSON.stringify(stateToSave));
     } catch {
-      // Local persistence is optional in restricted browser contexts.
+      // ignore
     }
   }, [
-    crossfader, selectedBank, samplerVolume,
-    deckAState.volume, deckAState.pitch, deckAState.effect, deckAState.fxAmount,
-    deckBState.volume, deckBState.pitch, deckBState.effect, deckBState.fxAmount,
+    crossfader,
+    selectedBank,
+    samplerVolume,
+    deckAState.volume,
+    deckAState.pitch,
+    deckAState.effect,
+    deckAState.fxAmount,
+    deckBState.volume,
+    deckBState.pitch,
+    deckBState.effect,
+    deckBState.fxAmount,
   ]);
 
   useEffect(() => {
-    let restoreFrame = 0;
-    try {
-      const savedScroll = Number(window.localStorage.getItem(DJ_MIXER_SCROLL_KEY));
-      if (Number.isFinite(savedScroll) && savedScroll > 0) {
-        scrollPositionRef.current = savedScroll;
-        restoreFrame = window.requestAnimationFrame(() => {
-          const screen = document.getElementById('dj-mixer-screen');
-          if (screen) screen.scrollTop = savedScroll;
-        });
-      }
-    } catch {
-      // Ignore unavailable storage.
-    }
-    return () => {
-      if (restoreFrame) window.cancelAnimationFrame(restoreFrame);
-      if (scrollSaveTimerRef.current !== null) window.clearTimeout(scrollSaveTimerRef.current);
-      try {
-        window.localStorage.setItem(DJ_MIXER_SCROLL_KEY, String(scrollPositionRef.current));
-      } catch {
-        // Ignore unavailable storage.
-      }
-    };
-  }, []);
-
-  // Update crossfade gains whenever crossfader value changes
-  useEffect(() => {
-    // Equal power or linear crossfade
     const gainA = Math.cos((crossfader * Math.PI) / 2);
     const gainB = Math.sin((crossfader * Math.PI) / 2);
     deckAEngine.setCrossfadeVolume(gainA);
     deckBEngine.setCrossfadeVolume(gainB);
   }, [crossfader]);
 
-  // Keyboard hotkeys for Sampler Pads (1-4, Q-R, A-F, Z-V)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['input', 'textarea'].includes((e.target as HTMLElement)?.tagName?.toLowerCase())) {
@@ -621,26 +523,9 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
     setTrackSelectorDeck(null);
   };
 
-  const getNextAutoFillTrack = (current: AudioItem | null, other: AudioItem | null): AudioItem | null => {
-    if (library.length === 0) return null;
-    const currentIndex = current ? library.findIndex((track) => track.id === current.id) : -1;
-    for (let step = 1; step <= library.length; step += 1) {
-      const index = (currentIndex + step + library.length) % library.length;
-      const candidate = library[index];
-      if (!candidate) continue;
-      if (library.length === 1 || candidate.id !== other?.id) return candidate;
-    }
-    return library[0] || null;
-  };
-
   const handleLoopBeats = (deck: 'A' | 'B', beats: number) => {
     const engine = deck === 'A' ? deckAEngine : deckBEngine;
-    const success = engine.setLoopBeats(beats);
-    if (!success) {
-      setBeatSyncMessage(isArabic
-        ? 'حمّل أغنية أو اختر لوبًا أقصر من المدة المتبقية في المسار.'
-        : 'Load a track or choose a shorter loop that fits inside this track.');
-    }
+    engine.setLoopBeats(beats);
   };
 
   const formatMs = (ms: number) => {
@@ -652,132 +537,338 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
   };
 
   const effectsList: Array<{ id: DJEffectType; name: string }> = [
-    { id: 'none', name: isArabic ? 'بدون مؤثر (Bypass)' : 'Bypass' },
-    { id: 'fx_filter', name: isArabic ? '🎛️ فلتر DJ ثنائي' : '🎛️ Dual Filter' },
-    { id: 'fx_delay', name: isArabic ? '🔁 صدى وتأخير (Echo)' : '🔁 Echo / Delay' },
-    { id: 'fx_reverb', name: isArabic ? '🌊 صدى مكاني (Reverb)' : '🌊 Reverb Hall' },
-    { id: 'fx_flanger', name: isArabic ? '🌀 مؤثر فلانجر (Flanger)' : '🌀 Flanger Jet' },
-    { id: 'fx_phaser', name: isArabic ? '🌈 مؤثر فيزر (Phaser)' : '🌈 Phaser' },
-    { id: 'fx_bitcrush', name: isArabic ? '👾 صوت رقمي (Bitcrush)' : '👾 8-Bit Lo-Fi' },
-    { id: 'fx_distortion', name: isArabic ? '🔥 تضخيم وتشويه (Distort)' : '🔥 Overdrive' },
-    { id: 'fx_compressor', name: isArabic ? '🎚️ كمبرسور (Compressor)' : '🎚️ Compressor' },
-    { id: 'voice_chipmunk', name: isArabic ? '🐿️ صوت السناجب (Chipmunk)' : '🐿️ Chipmunk Voice' },
-    { id: 'voice_robot', name: isArabic ? '🤖 صوت روبوت آلي (Robot)' : '🤖 Robot Voice' },
-    { id: 'voice_monster', name: isArabic ? '👹 صوت وحش عميق (Monster)' : '👹 Monster Voice' },
-    { id: 'voice_demon', name: isArabic ? '👻 صوت مرعب (Demon)' : '👻 Dark Demon' },
-    { id: 'voice_giant', name: isArabic ? '🏔️ صوت عملاق ضخم (Giant)' : '🏔️ Giant Bass' },
-    { id: 'voice_kid', name: isArabic ? '👶 صوت طفل (Kid)' : '👶 Kid Voice' },
-    { id: 'voice_woman', name: isArabic ? '👩 صوت أنثوي (Woman)' : '👩 Woman Voice' },
-    { id: 'voice_telephone', name: isArabic ? '☎️ صوت هاتف (Telephone)' : '☎️ Telephone' },
-    { id: 'voice_radio', name: isArabic ? '📻 صوت راديو قديم (Radio)' : '📻 Vintage Radio' },
-    { id: 'voice_alien', name: isArabic ? '👽 صوت فضائي (Alien)' : '👽 Alien Voice' },
+    { id: 'none', name: isArabic ? 'بدون مؤثر' : 'Bypass' },
+    { id: 'fx_filter', name: isArabic ? 'فلتر ثنائي' : 'Dual Filter' },
+    { id: 'fx_delay', name: isArabic ? 'صدى (Echo)' : 'Echo / Delay' },
+    { id: 'fx_reverb', name: isArabic ? 'ريفريرب (Reverb)' : 'Reverb Hall' },
+    { id: 'fx_flanger', name: isArabic ? 'فلانجر (Flanger)' : 'Flanger Jet' },
+    { id: 'fx_phaser', name: isArabic ? 'فيزر (Phaser)' : 'Phaser' },
+    { id: 'fx_bitcrush', name: isArabic ? 'لو فاي (8-Bit)' : '8-Bit Lo-Fi' },
+    { id: 'fx_distortion', name: isArabic ? 'ديستورشن' : 'Overdrive' },
+    { id: 'fx_compressor', name: isArabic ? 'كمبرسور' : 'Compressor' },
+    { id: 'voice_chipmunk', name: isArabic ? 'سنجاب' : 'Chipmunk' },
+    { id: 'voice_robot', name: isArabic ? 'روبوت' : 'Robot' },
+    { id: 'voice_monster', name: isArabic ? 'وحش' : 'Monster' },
+    { id: 'voice_demon', name: isArabic ? 'شبح' : 'Dark Demon' },
+    { id: 'voice_giant', name: isArabic ? 'عملاق' : 'Giant Bass' },
+    { id: 'voice_kid', name: isArabic ? 'طفل' : 'Kid Voice' },
+    { id: 'voice_woman', name: isArabic ? 'أنثوي' : 'Woman Voice' },
+    { id: 'voice_telephone', name: isArabic ? 'هاتف' : 'Telephone' },
+    { id: 'voice_radio', name: isArabic ? 'راديو' : 'Vintage Radio' },
+    { id: 'voice_alien', name: isArabic ? 'فضائي' : 'Alien Voice' },
   ];
 
-  const isAnyDeckPlaying = deckAState.isPlaying || deckBState.isPlaying;
-  const canBeatSync =
-    Boolean(deckAState.track && deckBState.track) &&
-    deckAState.isPlaying &&
-    deckBState.isPlaying &&
-    deckAState.currentBpm !== null &&
-    deckBState.currentBpm !== null &&
-    deckAState.bpmConfidence >= 0.12 &&
-    deckBState.bpmConfidence >= 0.12;
-
-  const handleBeatSync = (targetDeck: 'A' | 'B') => {
-    const target = targetDeck === 'A' ? deckAEngine : deckBEngine;
-    const reference = targetDeck === 'A' ? deckBEngine : deckAEngine;
-    const result = target.syncTo(reference);
-
-    if (!result.success) {
+  const handleBeatSync = () => {
+    const synced = deckBEngine.syncToDeck(deckAEngine);
+    if (synced) {
+      setBeatSyncMessage(isArabic ? 'تمت مزامنة الإيقاع (SYNC)' : 'Beat Synced!');
+    } else {
       setBeatSyncMessage(
-        result.reason === 'not-playing'
-          ? (isArabic ? 'شغّل الديكين أولاً.' : 'Start both decks before syncing.')
-          : (isArabic ? 'انتظر حتى ينتهي تحليل BPM في الديكين.' : 'Wait for BPM detection on both decks.'),
+        isArabic ? 'شغّل الديك A و B للمزامنة' : 'Play Deck A & B to Beat Sync'
       );
-      return;
     }
-
-    setBeatSyncMessage(
-      result.reason === 'pitch-limit'
-        ? (isArabic ? 'تمت محاذاة النبضات، لكن حد الـPitch منع تطابق السرعة بالكامل.' : 'Beat phase aligned, but the pitch limit prevents an exact tempo match.')
-        : (isArabic ? 'تمت مزامنة السرعة ومحاذاة النبضات.' : 'Tempo matched and beat phase aligned.'),
-    );
+    setTimeout(() => setBeatSyncMessage(null), 2500);
   };
 
-  const beatSyncHint = beatSyncMessage || (
-    !deckAState.track || !deckBState.track
-      ? (isArabic ? 'حمّل أغنيتين في الديكين أولاً.' : 'Load a track on both decks first.')
-      : !deckAState.isPlaying || !deckBState.isPlaying
-        ? (isArabic ? 'شغّل الديكين لبدء تحليل الإيقاع.' : 'Play both decks to analyse their beats.')
-        : !canBeatSync
-          ? (isArabic ? 'جارٍ تحليل BPM؛ انتظر ظهور الرقم في الديكين.' : 'Analysing BPM; wait for a reading on both decks.')
-          : (isArabic ? 'اختر الديك المرجعي لمزامنة السرعة والنبضات.' : 'Choose the master deck to sync tempo and beats.'));
+  const renderDeckCard = (
+    deck: 'A' | 'B',
+    state: typeof deckAState,
+    engine: typeof deckAEngine,
+    accent: string
+  ) => (
+    <div
+      className="rounded-xl border p-2.5 flex flex-col justify-between min-h-0 overflow-hidden"
+      style={{
+        backgroundColor: themeColors.surface,
+        borderColor: state.isPlaying ? accent : themeColors.border,
+      }}
+    >
+      {/* Deck Header & Track Load */}
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span
+            className="px-2 py-0.5 rounded-md text-xs font-black text-white shrink-0"
+            style={{ backgroundColor: accent }}
+          >
+            DECK {deck}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-xs truncate">
+              {state.track?.title || (isArabic ? 'لم يتم تحميل مسار' : 'No Track Loaded')}
+            </div>
+            <div className="text-[10px] opacity-60 truncate">
+              {state.track?.artist || '---'} •{' '}
+              {state.currentBpm ? `${Math.round(state.currentBpm)} BPM` : '-- BPM'}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setTrackSelectorDeck(deck)}
+            className="px-2 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+          >
+            <FolderOpen className="w-3 h-3" style={{ color: accent }} />
+            {isArabic ? 'مكتبة' : 'Load'}
+          </button>
+
+          <label
+            className="px-2 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+          >
+            <FileAudio className="w-3 h-3" style={{ color: accent }} />
+            {isArabic ? 'ملف' : 'File'}
+            <input
+              type="file"
+              accept={AUDIO_INPUT_ACCEPT}
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const url = URL.createObjectURL(f);
+                const item: AudioItem = {
+                  id: `dj_local_${Date.now()}`,
+                  title: f.name.replace(/\.[^/.]+$/, ''),
+                  artist: 'Local File',
+                  album: `Deck ${deck}`,
+                  duration: 0,
+                  uri: url,
+                  addedDate: Date.now(),
+                };
+                engine.loadTrack(item);
+                onImportFiles([f]);
+              }}
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Middle Row: Turntable Platter + Transport & Sliders */}
+      <div className="grid grid-cols-12 gap-2 items-center my-1 min-h-0 flex-1">
+        <div className="col-span-5 flex flex-col items-center justify-center">
+          <TurntablePlatter
+            deckId={deck}
+            accent={accent}
+            isPlaying={state.isPlaying}
+            pitch={state.pitch}
+            hasTrack={Boolean(state.track)}
+            onBeginScratch={() => engine.beginScratch()}
+            onScratchDelta={(d, v) => engine.scratchMove(d, v)}
+            onEndScratch={() => engine.endScratch()}
+          />
+        </div>
+
+        <div className="col-span-7 flex flex-col justify-between gap-1.5 h-full py-1">
+          {/* Scrubber */}
+          <div>
+            <input
+              type="range"
+              min={0}
+              max={state.duration || 100}
+              value={state.currentTime || 0}
+              onChange={(e) => engine.seekTo(Number(e.target.value))}
+              className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+              style={{
+                accentColor: accent,
+                backgroundColor: themeColors.surfaceVariant,
+              }}
+            />
+            <div className="flex justify-between text-[10px] font-mono opacity-70 mt-0.5">
+              <span>{formatMs(state.currentTime)}</span>
+              <span>{formatMs(state.duration)}</span>
+            </div>
+          </div>
+
+          {/* Play / Cue / Loop Buttons */}
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handlePlayDeck(deck)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1"
+                style={{ backgroundColor: accent }}
+              >
+                {state.isPlaying ? (
+                  <Pause className="w-3.5 h-3.5 fill-current" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                )}
+                {state.isPlaying ? 'PAUSE' : 'PLAY'}
+              </button>
+              <button
+                onClick={() => engine.seekTo(0)}
+                className="p-1.5 rounded-lg border"
+                style={{
+                  backgroundColor: themeColors.surfaceVariant,
+                  borderColor: themeColors.border,
+                }}
+                title="Cue / Restart"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Beat Loop Controls */}
+            <div className="flex items-center gap-1">
+              {[1, 2, 4, 8].map((b) => {
+                const active = state.loopBeats === b;
+                return (
+                  <button
+                    key={b}
+                    onClick={() => handleLoopBeats(deck, b)}
+                    className="px-1.5 py-1 rounded text-[10px] font-mono font-bold border"
+                    style={{
+                      backgroundColor: active ? accent : themeColors.surfaceVariant,
+                      borderColor: active ? accent : themeColors.border,
+                      color: active ? '#fff' : themeColors.textPrimary,
+                    }}
+                  >
+                    {b}B
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Volume & Pitch Sliders */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="flex justify-between text-[10px] font-bold">
+                <span>VOL</span>
+                <span style={{ color: accent }}>{Math.round(state.volume * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={state.volume}
+                onChange={(e) => engine.setDeckVolume(Number(e.target.value))}
+                className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+                style={{ accentColor: accent }}
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-[10px] font-bold">
+                <span>PITCH</span>
+                <span style={{ color: accent }}>{Math.round(state.pitch * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={0.5}
+                max={1.5}
+                step={0.01}
+                value={state.pitch}
+                onChange={(e) => engine.setPitch(Number(e.target.value))}
+                className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+                style={{ accentColor: accent }}
+              />
+            </div>
+          </div>
+
+          {/* FX Selector & Wet/Dry Mix */}
+          <div className="flex items-center gap-2">
+            <select
+              value={state.effect}
+              onChange={(e) => engine.setEffect(e.target.value as DJEffectType)}
+              className="px-2 py-1 rounded-lg border text-[11px] font-semibold outline-none flex-1 min-w-0"
+              style={{
+                backgroundColor: themeColors.background,
+                borderColor: themeColors.border,
+                color: themeColors.textPrimary,
+              }}
+            >
+              {effectsList.map((fx) => (
+                <option key={fx.id} value={fx.id}>
+                  {fx.name}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-1 w-28 shrink-0">
+              <span className="text-[10px] font-bold">FX</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={state.fxAmount}
+                onChange={(e) => engine.setFxAmount(Number(e.target.value))}
+                className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+                style={{ accentColor: accent }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div
       id="dj-mixer-screen"
-      onScroll={(event) => {
-        scrollPositionRef.current = event.currentTarget.scrollTop;
-        if (scrollSaveTimerRef.current !== null) window.clearTimeout(scrollSaveTimerRef.current);
-        scrollSaveTimerRef.current = window.setTimeout(() => {
-          try { window.localStorage.setItem(DJ_MIXER_SCROLL_KEY, String(scrollPositionRef.current)); } catch { /* optional persistence */ }
-        }, 120);
-      }}
-      className="flex-1 flex flex-col h-full overflow-y-auto select-none p-4 space-y-4"
+      className="h-full min-h-0 flex flex-col justify-between overflow-hidden p-3 gap-2.5 select-none"
       style={{
         backgroundColor: themeColors.background,
         color: themeColors.textPrimary,
       }}
     >
-      {/* Top Banner */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Disc className={`w-6 h-6 ${isAnyDeckPlaying ? 'animate-spin' : ''}`} style={{ color: themeColors.primary }} />
-          <div>
-            <h1 className="text-lg font-black tracking-widest">
-              {isArabic ? 'استوديو دي جي ميكسر' : 'DJ STUDIO MIXER'}
-            </h1>
-            <p className="text-xs" style={{ color: themeColors.textMuted }}>
-              Dual Deck Scratch, Pitch Control, DSP Effects & Soundboard
-            </p>
-          </div>
-        </div>
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            onImportFiles(e.target.files);
+          }
+        }}
+      />
 
-        {/* Live Audio Status Pill */}
-        <div
-          className={`px-3 py-1 rounded-full text-xs font-bold tracking-wider flex items-center gap-1.5 shadow-sm border ${
-            isAnyDeckPlaying ? 'animate-pulse' : ''
-          }`}
-          style={{
-            backgroundColor: isAnyDeckPlaying ? '#00e67625' : themeColors.surfaceVariant,
-            borderColor: isAnyDeckPlaying ? '#00e676' : themeColors.border,
-            color: isAnyDeckPlaying ? '#00e676' : themeColors.textMuted,
-          }}
-        >
-          <span
-            className="w-2 h-2 rounded-full"
-            style={{ backgroundColor: isAnyDeckPlaying ? '#00e676' : themeColors.textMuted }}
-          />
-          {isAnyDeckPlaying ? (isArabic ? 'صوت مباشر' : 'LIVE AUDIO') : (isArabic ? 'في الانتظار' : 'STANDBY')}
-        </div>
-      </div>
-
-      {/* Crossfader Card with 3D Perspective Tilt */}
+      {/* Top Mixer Control Bar (Title + Crossfader + Beat Sync + Auto Fill) */}
       <div
-        className="p-4 rounded-2xl border shadow-xl flex flex-col items-center gap-2 transition-transform duration-200"
+        className="rounded-xl p-2.5 border shrink-0 flex flex-wrap items-center justify-between gap-3"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
-          transform: `perspective(600px) rotateY(${(crossfader - 0.5) * 6}deg)`,
         }}
       >
-        <span className="text-[11px] font-bold tracking-wider opacity-60">
-          {isArabic ? 'التحويل المتقاطع للصوت (CROSSFADER)' : 'MASTER CROSSFADER'}
-        </span>
+        <div className="flex items-center gap-2">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: `${themeColors.primary}20` }}
+          >
+            <Disc className="w-4 h-4" style={{ color: themeColors.primary }} />
+          </div>
+          <h1 className="text-sm font-bold tracking-tight">
+            {isArabic ? 'مكسر الدي جي الاحترافي' : 'DJ Studio Mixer'}
+          </h1>
+          {beatSyncMessage && (
+            <span
+              className="text-xs px-2 py-0.5 rounded font-bold"
+              style={{
+                backgroundColor: `${themeColors.primary}20`,
+                color: themeColors.primary,
+              }}
+            >
+              {beatSyncMessage}
+            </span>
+          )}
+        </div>
 
-        <div className="flex items-center gap-3 w-full max-w-xl">
-          <span className="font-black text-sm px-2 py-0.5 rounded" style={{ color: themeColors.accentA }}>
-            DECK A
+        {/* Center Crossfader */}
+        <div className="flex items-center gap-2.5 flex-1 max-w-md mx-auto">
+          <span
+            className="text-xs font-black"
+            style={{ color: themeColors.accentA }}
+          >
+            A
           </span>
           <input
             type="range"
@@ -786,579 +877,114 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
             step={0.01}
             value={crossfader}
             onChange={(e) => setCrossfader(Number(e.target.value))}
-            className="flex-1 h-3 rounded-lg appearance-none cursor-ew-resize"
+            className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
             style={{
-              accentColor: crossfader < 0.5 ? themeColors.accentA : themeColors.accentB,
+              accentColor: themeColors.primary,
               backgroundColor: themeColors.surfaceVariant,
             }}
           />
-          <span className="font-black text-sm px-2 py-0.5 rounded" style={{ color: themeColors.accentB }}>
-            DECK B
+          <span
+            className="text-xs font-black"
+            style={{ color: themeColors.accentB }}
+          >
+            B
           </span>
+          <button
+            onClick={() => setCrossfader(0.5)}
+            className="px-2 py-0.5 rounded text-[10px] font-bold border"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+          >
+            CENTER
+          </button>
         </div>
 
-        <div className="flex justify-between w-full max-w-xl text-[10px] opacity-60">
-          <span>{Math.round((1 - crossfader) * 100)}%</span>
-          <span>CENTER (50/50)</span>
-          <span>{Math.round(crossfader * 100)}%</span>
+        {/* Right Actions: Beat Sync, Auto Fill, Import Folder */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleBeatSync}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1"
+            style={{ backgroundColor: themeColors.primary }}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            BEAT SYNC
+          </button>
+
+          <button
+            onClick={() => setAutoFillEnabled((v) => !v)}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
+            style={{
+              backgroundColor: autoFillEnabled
+                ? `${themeColors.primary}22`
+                : themeColors.surfaceVariant,
+              borderColor: autoFillEnabled ? themeColors.primary : themeColors.border,
+              color: autoFillEnabled ? themeColors.primary : themeColors.textSecondary,
+            }}
+          >
+            <Check className="w-3.5 h-3.5" />
+            {isArabic ? 'تعبئة تلقائية' : 'Auto Fill'}
+          </button>
+
+          <button
+            onClick={handleChooseLocalFolder}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
+            style={{
+              backgroundColor: themeColors.surfaceVariant,
+              borderColor: themeColors.border,
+            }}
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+            {isArabic ? 'مجلد' : 'Folder'}
+          </button>
         </div>
       </div>
 
-      {/* Beat Sync */}
+      {/* Dual Decks Row (Deck A & Deck B Side-by-Side) */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-2.5 overflow-hidden">
+        {renderDeckCard('A', deckAState, deckAEngine, themeColors.accentA)}
+        {renderDeckCard('B', deckBState, deckBEngine, themeColors.accentB)}
+      </div>
+
+      {/* Compact 16-Pad Sampler Dock (2x8 Grid) */}
       <div
-        className="p-4 rounded-2xl border shadow-lg flex flex-col gap-3"
+        className="rounded-xl p-2.5 border shrink-0 flex flex-col gap-2"
         style={{
           backgroundColor: themeColors.surface,
           borderColor: themeColors.border,
         }}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-xs font-black tracking-[0.16em]">
-              {isArabic ? 'مزامنة الإيقاع' : 'BEAT SYNC'}
-            </h2>
-            <p className="mt-1 text-[10px] opacity-65">
-              {isArabic ? 'تطابق تلقائي للسرعة ومحاذاة أقرب نبضة بين الديكين' : 'Match tempo and align the nearest beat between decks'}
-            </p>
-          </div>
-          <span
-            className="rounded-md border px-2 py-1 text-[10px] font-black"
-            style={{
-              color: canBeatSync ? '#00e676' : themeColors.textMuted,
-              borderColor: canBeatSync ? '#00e67680' : themeColors.border,
-              backgroundColor: canBeatSync ? '#00e67612' : themeColors.surfaceVariant,
-            }}
-          >
-            {canBeatSync ? (isArabic ? 'جاهز للمزامنة' : 'SYNC READY') : (isArabic ? 'بانتظار BPM' : 'WAITING FOR BPM')}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => handleBeatSync('B')}
-            disabled={!canBeatSync}
-            className="rounded-xl border px-3 py-3 text-xs font-black transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-            style={{
-              borderColor: themeColors.accentA + '90',
-              backgroundColor: themeColors.accentA + '18',
-              color: themeColors.accentA,
-            }}
-            title={isArabic ? 'اجعل Deck A هو المرجع وزامن Deck B معه' : 'Use Deck A as master and sync Deck B to it'}
-          >
-            {isArabic ? 'A ← مزامنة B' : 'SYNC A → B'}
-            <span className="mt-1 block text-[10px] font-semibold opacity-75">
-              {deckAState.currentBpm ? deckAState.currentBpm + ' BPM' : '— BPM'}
-              {'  →  '}
-              {deckBState.currentBpm ? deckBState.currentBpm + ' BPM' : '— BPM'}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleBeatSync('A')}
-            disabled={!canBeatSync}
-            className="rounded-xl border px-3 py-3 text-xs font-black transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-            style={{
-              borderColor: themeColors.accentB + '90',
-              backgroundColor: themeColors.accentB + '18',
-              color: themeColors.accentB,
-            }}
-            title={isArabic ? 'اجعل Deck B هو المرجع وزامن Deck A معه' : 'Use Deck B as master and sync Deck A to it'}
-          >
-            {isArabic ? 'B ← مزامنة A' : 'SYNC B → A'}
-            <span className="mt-1 block text-[10px] font-semibold opacity-75">
-              {deckBState.currentBpm ? deckBState.currentBpm + ' BPM' : '— BPM'}
-              {'  →  '}
-              {deckAState.currentBpm ? deckAState.currentBpm + ' BPM' : '— BPM'}
-            </span>
-          </button>
-        </div>
-        <p role="status" aria-live="polite" className="text-[10px] leading-relaxed opacity-75">
-          {beatSyncHint}
-        </p>
-      </div>
-
-      {/* Auto Fill */}
-      <div className="p-4 rounded-2xl border shadow-lg flex flex-wrap items-center justify-between gap-3" style={{ backgroundColor: themeColors.surface, borderColor: autoFillEnabled ? '#00e67680' : themeColors.border }}>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xs font-black tracking-[0.16em]">{isArabic ? 'الملء التلقائي للديكين' : 'DJ AUTO FILL'}</h2>
-          <p className="mt-1 text-[10px] opacity-65">
-            {isArabic ? 'يملأ الديك الفارغ من المكتبة، ويحمّل ويشغّل الأغنية التالية تلقائيًا عند انتهاء المسار.' : 'Fills empty decks from your library, then loads and plays the next song when a deck finishes.'}
-          </p>
-          <p className="mt-1 text-[10px]" style={{ color: autoFillEnabled ? '#00e676' : themeColors.textMuted }}>
-            {library.length === 0
-              ? (isArabic ? 'أضف أغاني إلى المكتبة أولًا.' : 'Add tracks to your library first.')
-              : autoFillEnabled
-                ? (isArabic ? 'مفعّل — التحميل والتشغيل التالي تلقائي.' : 'ON — next tracks load and play automatically.')
-                : (isArabic ? 'متوقف — اختر تشغيله عند الحاجة.' : 'OFF — enable when you want automatic loading.')}
-          </p>
-        </div>
-        <button type="button" onClick={() => setAutoFillEnabled((enabled) => !enabled)} className="rounded-xl border px-4 py-2.5 text-xs font-black transition-all" style={{ color: autoFillEnabled ? '#001b0b' : themeColors.primary, backgroundColor: autoFillEnabled ? '#00e676' : themeColors.surfaceVariant, borderColor: autoFillEnabled ? '#00e676' : themeColors.border }}>
-          {autoFillEnabled ? (isArabic ? 'الملء التلقائي: ON' : 'AUTO FILL: ON') : (isArabic ? 'تفعيل الملء التلقائي' : 'ENABLE AUTO FILL')}
-        </button>
-      </div>
-
-      {/* DECK A & DECK B SIDE-BY-SIDE */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
-        {/* DECK A */}
-        <div
-          className="p-3 sm:p-4 rounded-2xl border shadow-xl flex flex-col gap-2.5 sm:gap-3"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: `${themeColors.accentA}40`,
-          }}
-        >
-          {/* Deck Header */}
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-black text-sm tracking-wider" style={{ color: themeColors.accentA }}>
-              DECK A
-            </span>
-            <div className="flex items-center gap-2">
-              <span
-                className="rounded-md border px-2 py-1 text-[10px] font-black tabular-nums"
-                style={{ color: themeColors.accentA, borderColor: themeColors.accentA + '70', backgroundColor: themeColors.accentA + '12' }}
-                title={isArabic ? 'تحليل النبضات الصوتية في الوقت الحقيقي' : 'Real-time audio beat analysis'}
-              >
-                {deckAState.currentBpm ? `${deckAState.currentBpm} BPM` : (deckAState.isPlaying && deckAState.bpmConfidence < 0.12 ? (isArabic ? 'تحليل BPM…' : 'BPM SCAN…') : 'BPM —')}
-              </span>
-              <span className="text-xs font-mono opacity-70">
-                {formatMs(deckAState.currentTime)} / {formatMs(deckAState.duration)}
-              </span>
-            </div>
-          </div>
-
-          <VinylScratchPlatter engine={deckAEngine} hasTrack={Boolean(deckAState.track)} isPlaying={deckAState.isPlaying} pitch={deckAState.pitch} accent={themeColors.accentA} isArabic={isArabic} deckLabel="A" />
-
-          {/* Track Display Area */}
-          <div
-            onClick={() => setTrackSelectorDeck('A')}
-            className="p-3 rounded-xl border flex items-center justify-between cursor-pointer hover:border-blue-400 transition-colors"
-            style={{
-              backgroundColor: themeColors.surfaceVariant,
-              borderColor: themeColors.border,
-            }}
-          >
-            <div className="min-w-0 flex-1">
-              <h3 className="font-bold text-xs truncate">
-                {deckAState.track?.title || (isArabic ? 'اضغط لتحميل أغنية في DECK A' : 'CLICK TO LOAD TRACK')}
-              </h3>
-              <p className="text-[11px] truncate opacity-70">
-                {deckAState.track?.artist || 'Ready for mixing'}
-              </p>
-            </div>
-            <button
-              className="px-2.5 py-1 rounded text-xs font-bold border ml-2 shrink-0"
-              style={{
-                borderColor: themeColors.accentA,
-                color: themeColors.accentA,
-              }}
-            >
-              {isArabic ? 'اختيار' : 'SELECT'}
-            </button>
-          </div>
-
-          {/* Playback Controls (CUE & PLAY) */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => deckAEngine.cue()}
-              className="flex-1 py-3 rounded-xl font-black text-xs border tracking-wider transition-all active:scale-95"
-              style={{
-                borderColor: themeColors.accentA,
-                backgroundColor: `${themeColors.accentA}20`,
-                color: themeColors.accentA,
-              }}
-            >
-              CUE
-            </button>
-
-            <button
-              onClick={() => handlePlayDeck('A')}
-              className="flex-2 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition-transform active:scale-95"
-              style={{
-                backgroundColor: deckAState.isPlaying ? themeColors.accentA : themeColors.surfaceVariant,
-                color: deckAState.isPlaying ? '#ffffff' : themeColors.textPrimary,
-              }}
-            >
-              {deckAState.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-              <span>{deckAState.isPlaying ? 'PAUSE' : 'PLAY'}</span>
-            </button>
-          </div>
-
-          {/* Beat-quantized Auto Loop controls for DECK A. */}
-          <div className="rounded-xl border p-2.5 flex flex-col gap-2" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentA + '55' }}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-black tracking-wider">{isArabic ? 'لووب تلقائي' : 'AUTO LOOP'} · A</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: themeColors.accentA }}>{deckAState.loopBeats > 0 ? String(deckAState.loopBeats) + (isArabic ? ' نبضات' : ' BEATS') : (isArabic ? 'متوقف' : 'OFF')}</span>
-            </div>
-            <div className="grid grid-cols-6 gap-1">
-              {([0, 1, 2, 4, 8, 16] as const).map((beats) => {
-                const selected = deckAState.loopBeats === beats;
-                return (
-                  <button key={beats} type="button" disabled={!deckAState.track} onClick={() => handleLoopBeats('A', beats)} className="rounded-md border py-2 text-[10px] font-black transition-all disabled:opacity-40" style={{ backgroundColor: selected ? themeColors.accentA : themeColors.surface, color: selected ? '#ffffff' : themeColors.textPrimary, borderColor: selected ? themeColors.accentA : themeColors.border }} title={beats === 0 ? (isArabic ? 'إيقاف اللوب' : 'Disable loop') : (isArabic ? 'تكرار ' + beats + ' نبضة' : 'Loop ' + beats + ' beats')}>
-                    {beats === 0 ? 'OFF' : beats}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Independent DECK A volume knob */}
-          <div className="flex items-center justify-between gap-3 rounded-xl border p-2.5" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentA + '55' }}>
-            <div className="min-w-0">
-              <div className="text-[11px] font-black tracking-wide">{isArabic ? 'مستوى صوت DECK A' : 'DECK A VOLUME'}</div>
-              <div className="mt-1 text-[10px] opacity-60">{isArabic ? 'تحكم مستقل في مستوى الصوت' : 'Independent channel level'}</div>
-            </div>
-            <RotaryVolumeKnob
-              value={deckAState.volume}
-              onChange={(value) => deckAEngine.setDeckVolume(value)}
-              accent={themeColors.accentA}
-              textColor={themeColors.textPrimary}
-              mutedColor={themeColors.textMuted}
-              label={isArabic ? 'الصوت' : 'VOLUME'}
-            />
-          </div>
-
-          {/* Seek Scrubber */}
-          <div>
-            <input
-              type="range"
-              min={0}
-              max={deckAState.duration || 100}
-              value={deckAState.currentTime || 0}
-              onChange={(e) => deckAEngine.seekTo(Number(e.target.value))}
-              className="w-full h-1.5 rounded appearance-none cursor-pointer"
-              style={{
-                accentColor: themeColors.accentA,
-                backgroundColor: themeColors.surfaceVariant,
-              }}
-            />
-          </div>
-
-          {/* Pitch Slider (0.5x to 1.5x) */}
-          <div className="flex flex-col gap-1">
-            <div className="flex justify-between text-xs">
-              <span className="opacity-70 font-semibold">TEMPO / PITCH</span>
-              <span className="font-mono font-bold" style={{ color: themeColors.accentA }}>
-                {deckAState.pitch === 1.0
-                  ? '0.0%'
-                  : `${deckAState.pitch > 1 ? '+' : ''}${Math.round((deckAState.pitch - 1) * 100)}%`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] opacity-60">-50%</span>
-              <input
-                type="range"
-                min={0.5}
-                max={1.5}
-                step={0.01}
-                value={deckAState.pitch}
-                onChange={(e) => deckAEngine.setPitch(Number(e.target.value))}
-                className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
-                style={{
-                  accentColor: themeColors.accentA,
-                  backgroundColor: themeColors.surfaceVariant,
-                }}
-              />
-              <span className="text-[10px] opacity-60">+50%</span>
-              <button
-                onClick={() => deckAEngine.setPitch(1.0)}
-                className="px-1.5 py-0.5 rounded text-[10px] border hover:bg-white/10"
-                style={{ borderColor: themeColors.border }}
-                title="Reset Pitch to 100%"
-              >
-                RESET
-              </button>
-            </div>
-          </div>
-
-          {/* Deck A FX Rack */}
-          <div className="border-t pt-3 flex flex-col gap-2" style={{ borderColor: themeColors.border }}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" style={{ color: themeColors.accentA }} />
-                FX RACK (A)
-              </span>
-              <select
-                value={deckAState.effect}
-                onChange={(e) => deckAEngine.setEffect(e.target.value as DJEffectType)}
-                className="px-2 py-1 rounded text-xs border outline-none font-medium"
-                style={{
-                  backgroundColor: themeColors.surfaceVariant,
-                  borderColor: themeColors.border,
-                  color: themeColors.textPrimary,
-                }}
-              >
-                {effectsList.map((fx) => (
-                  <option key={fx.id} value={fx.id}>
-                    {fx.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {deckAState.effect !== 'none' && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="opacity-70 text-[11px]">Amount:</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={deckAState.fxAmount}
-                  onChange={(e) => deckAEngine.setFxAmount(Number(e.target.value))}
-                  className="flex-1 h-1.5 rounded appearance-none cursor-pointer"
-                  style={{
-                    accentColor: themeColors.accentA,
-                    backgroundColor: themeColors.surfaceVariant,
-                  }}
-                />
-                <span className="w-8 text-right font-mono text-[11px]">
-                  {Math.round(deckAState.fxAmount * 100)}%
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* DECK B */}
-        <div
-          className="p-3 sm:p-4 rounded-2xl border shadow-xl flex flex-col gap-2.5 sm:gap-3"
-          style={{
-            backgroundColor: themeColors.surface,
-            borderColor: `${themeColors.accentB}40`,
-          }}
-        >
-          {/* Deck Header */}
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-black text-sm tracking-wider" style={{ color: themeColors.accentB }}>
-              DECK B
-            </span>
-            <div className="flex items-center gap-2">
-              <span
-                className="rounded-md border px-2 py-1 text-[10px] font-black tabular-nums"
-                style={{ color: themeColors.accentB, borderColor: themeColors.accentB + '70', backgroundColor: themeColors.accentB + '12' }}
-                title={isArabic ? 'تحليل النبضات الصوتية في الوقت الحقيقي' : 'Real-time audio beat analysis'}
-              >
-                {deckBState.currentBpm ? `${deckBState.currentBpm} BPM` : (deckBState.isPlaying && deckBState.bpmConfidence < 0.12 ? (isArabic ? 'تحليل BPM…' : 'BPM SCAN…') : 'BPM —')}
-              </span>
-              <span className="text-xs font-mono opacity-70">
-                {formatMs(deckBState.currentTime)} / {formatMs(deckBState.duration)}
-              </span>
-            </div>
-          </div>
-
-          <VinylScratchPlatter engine={deckBEngine} hasTrack={Boolean(deckBState.track)} isPlaying={deckBState.isPlaying} pitch={deckBState.pitch} accent={themeColors.accentB} isArabic={isArabic} deckLabel="B" />
-
-          {/* Track Display Area */}
-          <div
-            onClick={() => setTrackSelectorDeck('B')}
-            className="p-3 rounded-xl border flex items-center justify-between cursor-pointer hover:border-pink-400 transition-colors"
-            style={{
-              backgroundColor: themeColors.surfaceVariant,
-              borderColor: themeColors.border,
-            }}
-          >
-            <div className="min-w-0 flex-1">
-              <h3 className="font-bold text-xs truncate">
-                {deckBState.track?.title || (isArabic ? 'اضغط لتحميل أغنية في DECK B' : 'CLICK TO LOAD TRACK')}
-              </h3>
-              <p className="text-[11px] truncate opacity-70">
-                {deckBState.track?.artist || 'Ready for mixing'}
-              </p>
-            </div>
-            <button
-              className="px-2.5 py-1 rounded text-xs font-bold border ml-2 shrink-0"
-              style={{
-                borderColor: themeColors.accentB,
-                color: themeColors.accentB,
-              }}
-            >
-              {isArabic ? 'اختيار' : 'SELECT'}
-            </button>
-          </div>
-
-          {/* Playback Controls (CUE & PLAY) */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => deckBEngine.cue()}
-              className="flex-1 py-3 rounded-xl font-black text-xs border tracking-wider transition-all active:scale-95"
-              style={{
-                borderColor: themeColors.accentB,
-                backgroundColor: `${themeColors.accentB}20`,
-                color: themeColors.accentB,
-              }}
-            >
-              CUE
-            </button>
-
-            <button
-              onClick={() => handlePlayDeck('B')}
-              className="flex-2 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition-transform active:scale-95"
-              style={{
-                backgroundColor: deckBState.isPlaying ? themeColors.accentB : themeColors.surfaceVariant,
-                color: deckBState.isPlaying ? '#ffffff' : themeColors.textPrimary,
-              }}
-            >
-              {deckBState.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-              <span>{deckBState.isPlaying ? 'PAUSE' : 'PLAY'}</span>
-            </button>
-          </div>
-
-          {/* Beat-quantized Auto Loop controls for DECK B. */}
-          <div className="rounded-xl border p-2.5 flex flex-col gap-2" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentB + '55' }}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-black tracking-wider">{isArabic ? 'لووب تلقائي' : 'AUTO LOOP'} · B</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: themeColors.accentB }}>{deckBState.loopBeats > 0 ? String(deckBState.loopBeats) + (isArabic ? ' نبضات' : ' BEATS') : (isArabic ? 'متوقف' : 'OFF')}</span>
-            </div>
-            <div className="grid grid-cols-6 gap-1">
-              {([0, 1, 2, 4, 8, 16] as const).map((beats) => {
-                const selected = deckBState.loopBeats === beats;
-                return (
-                  <button key={beats} type="button" disabled={!deckBState.track} onClick={() => handleLoopBeats('B', beats)} className="rounded-md border py-2 text-[10px] font-black transition-all disabled:opacity-40" style={{ backgroundColor: selected ? themeColors.accentB : themeColors.surface, color: selected ? '#ffffff' : themeColors.textPrimary, borderColor: selected ? themeColors.accentB : themeColors.border }} title={beats === 0 ? (isArabic ? 'إيقاف اللوب' : 'Disable loop') : (isArabic ? 'تكرار ' + beats + ' نبضة' : 'Loop ' + beats + ' beats')}>
-                    {beats === 0 ? 'OFF' : beats}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Independent DECK B volume knob */}
-          <div className="flex items-center justify-between gap-3 rounded-xl border p-2.5" style={{ backgroundColor: themeColors.surfaceVariant, borderColor: themeColors.accentB + '55' }}>
-            <div className="min-w-0">
-              <div className="text-[11px] font-black tracking-wide">{isArabic ? 'مستوى صوت DECK B' : 'DECK B VOLUME'}</div>
-              <div className="mt-1 text-[10px] opacity-60">{isArabic ? 'تحكم مستقل في مستوى الصوت' : 'Independent channel level'}</div>
-            </div>
-            <RotaryVolumeKnob
-              value={deckBState.volume}
-              onChange={(value) => deckBEngine.setDeckVolume(value)}
-              accent={themeColors.accentB}
-              textColor={themeColors.textPrimary}
-              mutedColor={themeColors.textMuted}
-              label={isArabic ? 'الصوت' : 'VOLUME'}
-            />
-          </div>
-
-          {/* Seek Scrubber */}
-          <div>
-            <input
-              type="range"
-              min={0}
-              max={deckBState.duration || 100}
-              value={deckBState.currentTime || 0}
-              onChange={(e) => deckBEngine.seekTo(Number(e.target.value))}
-              className="w-full h-1.5 rounded appearance-none cursor-pointer"
-              style={{
-                accentColor: themeColors.accentB,
-                backgroundColor: themeColors.surfaceVariant,
-              }}
-            />
-          </div>
-
-          {/* Pitch Slider (0.5x to 1.5x) */}
-          <div className="flex flex-col gap-1">
-            <div className="flex justify-between text-xs">
-              <span className="opacity-70 font-semibold">TEMPO / PITCH</span>
-              <span className="font-mono font-bold" style={{ color: themeColors.accentB }}>
-                {deckBState.pitch === 1.0
-                  ? '0.0%'
-                  : `${deckBState.pitch > 1 ? '+' : ''}${Math.round((deckBState.pitch - 1) * 100)}%`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] opacity-60">-50%</span>
-              <input
-                type="range"
-                min={0.5}
-                max={1.5}
-                step={0.01}
-                value={deckBState.pitch}
-                onChange={(e) => deckBEngine.setPitch(Number(e.target.value))}
-                className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
-                style={{
-                  accentColor: themeColors.accentB,
-                  backgroundColor: themeColors.surfaceVariant,
-                }}
-              />
-              <span className="text-[10px] opacity-60">+50%</span>
-              <button
-                onClick={() => deckBEngine.setPitch(1.0)}
-                className="px-1.5 py-0.5 rounded text-[10px] border hover:bg-white/10"
-                style={{ borderColor: themeColors.border }}
-                title="Reset Pitch to 100%"
-              >
-                RESET
-              </button>
-            </div>
-          </div>
-
-          {/* Deck B FX Rack */}
-          <div className="border-t pt-3 flex flex-col gap-2" style={{ borderColor: themeColors.border }}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" style={{ color: themeColors.accentB }} />
-                FX RACK (B)
-              </span>
-              <select
-                value={deckBState.effect}
-                onChange={(e) => deckBEngine.setEffect(e.target.value as DJEffectType)}
-                className="px-2 py-1 rounded text-xs border outline-none font-medium"
-                style={{
-                  backgroundColor: themeColors.surfaceVariant,
-                  borderColor: themeColors.border,
-                  color: themeColors.textPrimary,
-                }}
-              >
-                {effectsList.map((fx) => (
-                  <option key={fx.id} value={fx.id}>
-                    {fx.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {deckBState.effect !== 'none' && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="opacity-70 text-[11px]">Amount:</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={deckBState.fxAmount}
-                  onChange={(e) => deckBEngine.setFxAmount(Number(e.target.value))}
-                  className="flex-1 h-1.5 rounded appearance-none cursor-pointer"
-                  style={{
-                    accentColor: themeColors.accentB,
-                    backgroundColor: themeColors.surfaceVariant,
-                  }}
-                />
-                <span className="w-8 text-right font-mono text-[11px]">
-                  {Math.round(deckBState.fxAmount * 100)}%
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* DJ SAMPLER / SOUND FX BOARD */}
-      <div
-        className="p-4 rounded-2xl border shadow-xl flex flex-col gap-3"
-        style={{
-          backgroundColor: themeColors.surface,
-          borderColor: themeColors.border,
-        }}
-      >
-        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5" style={{ color: themeColors.primary }} />
-            <h2 className="font-bold text-sm tracking-wider">
-              {isArabic ? 'لوحة مؤثرات الصوت والسامبلر (DJ FX / SAMPLER)' : 'DJ FX / SAMPLER BOARD'}
-            </h2>
+            <Layers className="w-4 h-4" style={{ color: themeColors.primary }} />
+            <span className="text-xs font-bold">
+              {isArabic ? 'لوحة المؤثرات (16-Pad Sampler)' : '16-Pad FX Sampler'}
+            </span>
+            <div className="flex items-center gap-1 ml-2">
+              {(['A', 'B', 'C', 'D'] as MixerBank[]).map((bank) => (
+                <button
+                  key={bank}
+                  onClick={() => setSelectedBank(bank)}
+                  className="px-2 py-0.5 rounded text-[11px] font-bold border"
+                  style={{
+                    backgroundColor:
+                      selectedBank === bank
+                        ? themeColors.primary
+                        : themeColors.surfaceVariant,
+                    borderColor:
+                      selectedBank === bank ? themeColors.primary : themeColors.border,
+                    color: selectedBank === bank ? '#fff' : themeColors.textPrimary,
+                  }}
+                >
+                  BANK {bank}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs opacity-70">Volume:</span>
+            <Volume2 className="w-3.5 h-3.5 opacity-70" />
             <input
               type="range"
               min={0}
@@ -1370,66 +996,42 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
                 setSamplerVolume(v);
                 samplerEngine.volume = v;
               }}
-              className="w-20 h-1.5 rounded appearance-none cursor-pointer"
-              style={{
-                accentColor: themeColors.primary,
-                backgroundColor: themeColors.surfaceVariant,
-              }}
+              className="w-24 h-1.5 rounded-lg appearance-none cursor-pointer"
+              style={{ accentColor: themeColors.primary }}
             />
-          </div>
-        </div>
-
-        {/* Bank Selection Tabs (A, B, C, D) */}
-        <div className="flex gap-2">
-          {(['A', 'B', 'C', 'D'] as Array<'A' | 'B' | 'C' | 'D'>).map((b) => {
-            const labels: Record<string, string> = {
-              A: 'BANK A • DJ Sci-Fi',
-              B: 'BANK B • Comedy & Memes',
-              C: 'BANK C • Viral & Trends',
-              D: 'BANK D • Custom Pads',
-            };
-            const isSel = selectedBank === b;
-            return (
-              <button
-                key={b}
-                onClick={() => setSelectedBank(b)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                  isSel ? 'shadow-sm' : 'opacity-70 hover:opacity-100'
-                }`}
-                style={{
-                  backgroundColor: isSel ? themeColors.primary : themeColors.surfaceVariant,
-                  borderColor: isSel ? themeColors.primary : themeColors.border,
-                  color: isSel ? '#ffffff' : themeColors.textPrimary,
-                }}
-              >
-                {labels[b]}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 16 Pads Grid (4x4) */}
-        <div className="grid grid-cols-4 sm:grid-cols-8 lg:grid-cols-8 gap-2">
-          {samplerEngine.pads[selectedBank].map((pad) => (
             <button
-              key={pad.id}
-              onClick={() => samplerEngine.triggerPad(pad)}
-              className="h-16 p-2 rounded-xl border flex flex-col justify-between items-center transition-all active:scale-90 hover:brightness-110 shadow-sm"
+              onClick={() => samplerEngine.stopAll()}
+              className="px-2 py-0.5 rounded text-[10px] font-bold border text-red-400"
               style={{
                 backgroundColor: themeColors.surfaceVariant,
                 borderColor: themeColors.border,
               }}
             >
-              <span className="text-[10px] font-mono px-1 rounded font-bold opacity-60 self-start"
-                style={{ backgroundColor: `${themeColors.primary}30` }}>
-                {pad.hotkey}
-              </span>
-              <span className="text-[11px] font-bold text-center leading-tight truncate w-full">
-                {pad.name}
-              </span>
-              <span className="text-[9px] opacity-50 uppercase tracking-tighter">
-                {pad.category}
-              </span>
+              STOP FX
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-8 gap-1.5">
+          {samplerEngine.pads[selectedBank].map((pad: SamplePad) => (
+            <button
+              key={pad.id}
+              onClick={() => samplerEngine.triggerPad(pad)}
+              className="px-2 py-1.5 rounded-lg border text-left transition-transform active:scale-95 flex items-center justify-between gap-1 overflow-hidden"
+              style={{
+                backgroundColor: themeColors.surfaceVariant,
+                borderColor: pad.color || themeColors.border,
+              }}
+            >
+              <span className="text-[10px] font-bold truncate">{pad.name}</span>
+              {pad.hotkey && (
+                <span
+                  className="text-[9px] font-mono px-1 rounded opacity-70 shrink-0"
+                  style={{ backgroundColor: themeColors.background }}
+                >
+                  {pad.hotkey}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1437,106 +1039,49 @@ export const DJMixerScreen: React.FC<DJMixerScreenProps> = ({
 
       {/* Track Selector Modal */}
       {trackSelectorDeck && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div
-            className="w-full max-w-md max-h-[80vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden"
+            className="w-full max-w-lg rounded-2xl border p-4 flex flex-col max-h-[80vh]"
             style={{
               backgroundColor: themeColors.surface,
               borderColor: themeColors.border,
+              color: themeColors.textPrimary,
             }}
           >
-            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: themeColors.border }}>
+            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: themeColors.border }}>
               <h3 className="font-bold text-sm">
                 {isArabic
-                  ? `تحميل أغنية إلى DECK ${trackSelectorDeck}`
-                  : `Load Track to DECK ${trackSelectorDeck}`}
+                  ? `اختر أغنية لـ Deck ${trackSelectorDeck}`
+                  : `Select Track for Deck ${trackSelectorDeck}`}
               </h3>
-              <button
-                onClick={() => setTrackSelectorDeck(null)}
-                className="p-1 rounded-lg hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
+              <button onClick={() => setTrackSelectorDeck(null)}>
+                <X className="w-4 h-4" />
               </button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+            <div className="flex-1 overflow-y-auto py-2 space-y-1.5">
               {library.length === 0 ? (
-                <div className="py-8 text-center text-xs opacity-70 space-y-3">
-                  <p>
-                    {isArabic
-                      ? 'المكتبة فارغة. قم باختيار أغانٍ أو مجلد كامل مباشرة:'
-                      : 'Library is empty. Import songs or a music folder directly:'}
-                  </p>
+                <div className="py-8 text-center text-xs opacity-60">
+                  {isArabic ? 'المكتبة فارغة' : 'Library is empty'}
                 </div>
               ) : (
-                library.map((track) => (
-                  <div
-                    key={track.id}
-                    onClick={() => handleLoadTrack(trackSelectorDeck, track)}
-                    className="p-2.5 rounded-xl border flex items-center justify-between cursor-pointer hover:bg-white/10 transition-colors"
+                library.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => handleLoadTrack(trackSelectorDeck, item)}
+                    className="w-full p-2 rounded-lg border text-left flex items-center justify-between hover:opacity-90"
                     style={{
                       backgroundColor: themeColors.surfaceVariant,
                       borderColor: themeColors.border,
                     }}
                   >
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-bold text-xs truncate">{track.title}</h4>
-                      <p className="text-[11px] opacity-70 truncate">{track.artist}</p>
+                    <div className="min-w-0">
+                      <div className="font-bold text-xs truncate">{item.title}</div>
+                      <div className="text-[10px] opacity-60 truncate">{item.artist}</div>
                     </div>
-                    <span className="text-xs opacity-60 font-mono ml-2">
-                      {formatMs(track.duration)}
-                    </span>
-                  </div>
+                    <Play className="w-3.5 h-3.5 shrink-0" />
+                  </button>
                 ))
               )}
-            </div>
-
-            {/* Modal Footer with Direct Song and Folder Import */}
-            <div className="p-3 border-t flex items-center justify-between gap-2" style={{ borderColor: themeColors.border }}>
-              <label
-                className="flex-1 py-2 px-3 rounded-xl text-xs font-semibold cursor-pointer border flex items-center justify-center gap-1.5 hover:bg-white/5 transition-all text-center"
-                style={{
-                  backgroundColor: themeColors.surfaceVariant,
-                  borderColor: themeColors.border,
-                }}
-              >
-                <FileAudio className="w-3.5 h-3.5" />
-                <span>{isArabic ? 'اختيار أغاني' : 'Select Songs'}</span>
-                <input
-                  type="file"
-                  multiple
-                  accept={AUDIO_INPUT_ACCEPT}
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      onImportFiles(e.target.files);
-                    }
-                  }}
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={() => { void handleChooseLocalFolder(); }}
-                className="flex-1 py-2 px-3 rounded-xl text-xs font-semibold cursor-pointer border flex items-center justify-center gap-1.5 hover:bg-white/5 transition-all text-center"
-                style={{
-                  backgroundColor: themeColors.surfaceVariant,
-                  borderColor: themeColors.border,
-                }}
-              >
-                <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
-                <span>{isArabic ? 'اختيار مجلد' : 'Select Folder'}</span>
-              </button>
-              <input
-                ref={folderInputRef}
-                type="file"
-                multiple
-                // @ts-expect-error - webkitdirectory is standard in Chromium browsers
-                webkitdirectory=""
-                directory=""
-                className="hidden"
-                onChange={handleFolderInputChange}
-              />
             </div>
           </div>
         </div>

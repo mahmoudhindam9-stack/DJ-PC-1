@@ -76,11 +76,6 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
               <h2 className="text-lg font-bold">
                 {isArabic ? 'تثبيت البرنامج وإنشاء أيقونة سطح المكتب' : 'Desktop Setup & Shortcut Installer'}
               </h2>
-              <p className="text-xs opacity-70">
-                {isArabic
-                  ? 'تشغيل وتثبيت DJ Desktop على جهاز الكمبيوتر مع أيقونة سطح مكتب مستقلة'
-                  : 'Install DJ Desktop onto your PC with an automated setup file & desktop icon'}
-              </p>
             </div>
           </div>
           <button

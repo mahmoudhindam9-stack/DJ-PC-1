@@ -36,6 +36,7 @@ type OnlineApiResponse<T> = {
 };
 
 const LOCAL_API = '/api/albumaty';
+const OLDIES_API = '/api/oldies';
 
 const AUDIUS_NODES = [
   'https://discoveryprovider.audius.co/v1',
@@ -76,6 +77,40 @@ class OnlineMusicService {
     return `${LOCAL_API}/download?url=${encodeURIComponent(url)}`;
   }
 
+  // Oldies & Classics (الزمن الجميل والكلاسيكيات)
+  async getOldiesHome(force = false): Promise<AlbumatyHomeData> {
+    const suffix = force ? '?force=1' : '';
+    return this.requestJson<AlbumatyHomeData>(`${OLDIES_API}/home${suffix}`);
+  }
+
+  async getOldiesSection(url: string): Promise<AlbumatySection> {
+    return this.requestJson<AlbumatySection>(
+      `${OLDIES_API}/section?url=${encodeURIComponent(url)}`
+    );
+  }
+
+  async searchOldies(query: string): Promise<AlbumatyHomeData> {
+    const term = query.trim();
+    if (!term) return { categories: [], albums: [], songs: [], artists: [] };
+    return this.requestJson<AlbumatyHomeData>(
+      `${OLDIES_API}/search?q=${encodeURIComponent(term)}`
+    );
+  }
+
+  async resolveOldiesSong(url: string): Promise<ResolvedOnlineTrack> {
+    return this.requestJson<ResolvedOnlineTrack>(
+      `${OLDIES_API}/resolve?url=${encodeURIComponent(url)}`
+    );
+  }
+
+  getOldiesStreamEndpoint(url: string): string {
+    return `${OLDIES_API}/stream?url=${encodeURIComponent(url)}`;
+  }
+
+  getOldiesDownloadEndpoint(url: string): string {
+    return `${OLDIES_API}/download?url=${encodeURIComponent(url)}`;
+  }
+
   getAudiusStreamEndpoint(url: string): string {
     return `/api/online/stream?url=${encodeURIComponent(url)}`;
   }
@@ -84,22 +119,31 @@ class OnlineMusicService {
     return `/api/online/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(title)}.mp3`;
   }
 
-  convertResolvedToAudioItem(track: ResolvedOnlineTrack, stableId?: string): AudioItem {
+  convertResolvedToAudioItem(
+    track: ResolvedOnlineTrack,
+    stableId?: string,
+    onlineSource: 'ALBUMATY' | 'OLDIES' = 'ALBUMATY'
+  ): AudioItem {
     const sourceUrl = track.id;
     const streamTarget = track.streamUrl || sourceUrl;
     const downloadTarget = track.downloadUrl || sourceUrl;
+    const isOldies = onlineSource === 'OLDIES';
     return {
-      id: stableId || `albumaty_${encodeURIComponent(track.id)}`,
+      id: stableId || `${isOldies ? 'oldies' : 'albumaty'}_${encodeURIComponent(track.id)}`,
       title: track.title,
-      artist: track.artist || 'Albumaty',
-      album: track.album || 'Albumaty Online',
+      artist: track.artist || (isOldies ? 'الزمن الجميل' : 'Albumaty'),
+      album: track.album || (isOldies ? 'Oldies & Classics' : 'Albumaty Online'),
       duration: track.duration || 0,
-      uri: this.getAlbumatyStreamEndpoint(streamTarget),
+      uri: isOldies
+        ? this.getOldiesStreamEndpoint(streamTarget)
+        : this.getAlbumatyStreamEndpoint(streamTarget),
       coverUri: track.artworkUrl,
       addedDate: Date.now(),
-      onlineSource: 'ALBUMATY',
+      onlineSource,
       sourceUrl,
-      downloadUri: this.getAlbumatyDownloadEndpoint(downloadTarget),
+      downloadUri: isOldies
+        ? this.getOldiesDownloadEndpoint(downloadTarget)
+        : this.getAlbumatyDownloadEndpoint(downloadTarget),
     };
   }
 
@@ -227,7 +271,7 @@ export const onlineMusicService = new OnlineMusicService();
 export function getOnlineDownloadEndpoint(item: {
   id: string;
   uri: string;
-  onlineSource?: 'ALBUMATY' | 'AUDIUS';
+  onlineSource?: 'ALBUMATY' | 'AUDIUS' | 'OLDIES' | 'QURAN';
   sourceUrl?: string;
   downloadUri?: string;
   title?: string;
@@ -239,6 +283,12 @@ export function getOnlineDownloadEndpoint(item: {
   if (item.onlineSource === 'ALBUMATY' && sourceUrl) {
     return `/api/albumaty/download?url=${encodeURIComponent(sourceUrl)}&name=${titleName}.mp3`;
   }
+  if (item.onlineSource === 'OLDIES' && sourceUrl) {
+    return `/api/oldies/download?url=${encodeURIComponent(sourceUrl)}&name=${titleName}.mp3`;
+  }
+  if (item.onlineSource === 'QURAN' && sourceUrl) {
+    return `/api/quran/download?url=${encodeURIComponent(sourceUrl)}&name=${titleName}.mp3`;
+  }
   if (item.onlineSource === 'AUDIUS' && sourceUrl) {
     return `/api/online/download?url=${encodeURIComponent(sourceUrl)}&name=${titleName}.mp3`;
   }
@@ -249,6 +299,14 @@ export function getOnlineDownloadEndpoint(item: {
       const parsedUrl = item.uri.slice('/api/albumaty/stream?url='.length);
       return `/api/albumaty/download?url=${parsedUrl}&name=${titleName}.mp3`;
     }
+    if (item.uri.startsWith('/api/oldies/stream?url=')) {
+      const parsedUrl = item.uri.slice('/api/oldies/stream?url='.length);
+      return `/api/oldies/download?url=${parsedUrl}&name=${titleName}.mp3`;
+    }
+    if (item.uri.startsWith('/api/quran/stream?url=')) {
+      const parsedUrl = item.uri.slice('/api/quran/stream?url='.length);
+      return `/api/quran/download?url=${parsedUrl}&name=${titleName}.mp3`;
+    }
     if (item.uri.startsWith('/api/online/stream?url=')) {
       const parsedUrl = item.uri.slice('/api/online/stream?url='.length);
       return `/api/online/download?url=${parsedUrl}&name=${titleName}.mp3`;
@@ -257,6 +315,8 @@ export function getOnlineDownloadEndpoint(item: {
 
   const legacyAlbumatyUrl = item.id.startsWith('albumaty_')
     ? decodeURIComponent(item.id.slice('albumaty_'.length))
+    : item.id.startsWith('oldies_')
+    ? decodeURIComponent(item.id.slice('oldies_'.length))
     : item.id;
   if (/^https?:\/\/(?:www\.)?albumaty\.com\/song\//i.test(legacyAlbumatyUrl)) {
     return `/api/albumaty/download?url=${encodeURIComponent(legacyAlbumatyUrl)}&name=${titleName}.mp3`;
@@ -267,6 +327,9 @@ export function getOnlineDownloadEndpoint(item: {
     const parsed = new URL(legacyAudiusUrl, window.location.origin);
     if (/^(?:[^.]+\.)*audius\.co$/i.test(parsed.hostname) && parsed.pathname.includes('/tracks/')) {
       return `/api/online/download?url=${encodeURIComponent(legacyAudiusUrl)}&name=${titleName}.mp3`;
+    }
+    if (/^(?:[^.]+\.)*mp3quran\.net$/i.test(parsed.hostname)) {
+      return `/api/quran/download?url=${encodeURIComponent(legacyAudiusUrl)}&name=${titleName}.mp3`;
     }
   } catch {
     // Ignore malformed legacy URLs.
