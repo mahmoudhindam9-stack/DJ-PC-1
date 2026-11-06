@@ -103,7 +103,8 @@ try {
 
     # Install dependencies
     Write-Host "[*] Installing dependencies..." -ForegroundColor Cyan
-    if (Test-Path (Join-Path $RootDir "package.json") -and ($RootDir -ne $AppDir)) {
+    $rootPackageJson = Join-Path $RootDir "package.json"
+    if ((Test-Path $rootPackageJson) -and ($RootDir -ne $AppDir)) {
         Push-Location $RootDir
         & npm.cmd install --include=dev --no-audit --no-fund
         Pop-Location
@@ -129,7 +130,8 @@ try {
 
     $distPath = Join-Path $AppDir "dist\index.html"
     $parentDistPath = Join-Path $RootDir "dist\index.html"
-    if (-not (Test-Path $distPath) -and -not (Test-Path $parentDistPath)) {
+    $hasDist = (Test-Path $distPath) -or (Test-Path $parentDistPath)
+    if (-not $hasDist) {
         Write-Warning "dist\index.html was not found, will run in development mode."
     } else {
         Write-Host "[+] Production build is ready." -ForegroundColor Green

@@ -45,6 +45,11 @@ if exist "%~dp0app\package.json" set "APP_DIR=%~dp0app"
 
 set "PATH=%APP_DIR%\node_modules\.bin;%~dp0node_modules\.bin;%PATH%"
 
+if exist "%~dp0package.json" if not "%APP_DIR%"=="%~dp0" (
+    echo Installing root dependencies...
+    call npm install --include=dev --no-audit --no-fund
+)
+
 cd /d "%APP_DIR%"
 echo Installing dependencies...
 call npm install --include=dev --no-audit --no-fund
