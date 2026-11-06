@@ -103,7 +103,7 @@ try {
 
     # Install dependencies
     Write-Host "[*] Installing dependencies..." -ForegroundColor Cyan
-    & npm.cmd install --no-audit --no-fund
+    & npm.cmd install --include=dev --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "npm install finished with exit code $LASTEXITCODE. Continuing to check build assets..."
     }

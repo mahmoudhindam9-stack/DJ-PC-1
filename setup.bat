@@ -45,7 +45,7 @@ if exist "%~dp0app\package.json" set "APP_DIR=%~dp0app"
 
 cd /d "%APP_DIR%"
 echo Installing dependencies...
-call npm install --no-audit --no-fund
+call npm install --include=dev --no-audit --no-fund
 echo Building production assets...
 call npm run build
 

@@ -11,25 +11,26 @@
     "lint": "npm --prefix app run lint"
   },
   "dependencies": {
+    "@tailwindcss/oxide": "4.0.9",
+    "@tailwindcss/vite": "4.0.9",
     "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/cli": "^2.2.0",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-fs": "^2.2.0",
     "@tauri-apps/plugin-shell": "^2.2.0",
-    "lucide-react": "^1.16.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/oxide": "4.0.9",
-    "@tailwindcss/vite": "4.0.9",
-    "@tauri-apps/cli": "^2.2.0",
     "@types/node": "^22.13.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
+    "lucide-react": "^1.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "tailwindcss": "4.0.9",
     "typescript": "^5.7.3",
     "vite": "^6.2.0",
     "vite-plugin-pwa": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
   }
 }

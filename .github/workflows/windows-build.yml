@@ -78,7 +78,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: app
-        run: npm install --no-audit --no-fund
+        run: npm install --include=dev --no-audit --no-fund
 
       - name: Build production app
         working-directory: app
