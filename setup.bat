@@ -43,11 +43,17 @@ if errorlevel 1 (
 set "APP_DIR=%~dp0"
 if exist "%~dp0app\package.json" set "APP_DIR=%~dp0app"
 
+set "PATH=%APP_DIR%\node_modules\.bin;%~dp0node_modules\.bin;%PATH%"
+
 cd /d "%APP_DIR%"
 echo Installing dependencies...
 call npm install --include=dev --no-audit --no-fund
 echo Building production assets...
 call npm run build
+if errorlevel 1 (
+    echo Retrying build with npx vite build...
+    call npx vite build
+)
 
 if exist "%~dp0app\scripts\run-dj-desktop.bat" (
     start "" "%~dp0app\scripts\run-dj-desktop.bat"

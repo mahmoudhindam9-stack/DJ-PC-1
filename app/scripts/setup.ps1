@@ -103,16 +103,28 @@ try {
 
     # Install dependencies
     Write-Host "[*] Installing dependencies..." -ForegroundColor Cyan
+    if (Test-Path (Join-Path $RootDir "package.json") -and ($RootDir -ne $AppDir)) {
+        Push-Location $RootDir
+        & npm.cmd install --include=dev --no-audit --no-fund
+        Pop-Location
+    }
+    Set-Location $AppDir
     & npm.cmd install --include=dev --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "npm install finished with exit code $LASTEXITCODE. Continuing to check build assets..."
     }
 
+    # Add bin directories to PATH so vite and tsc are always found
+    $appBin = Join-Path $AppDir "node_modules\.bin"
+    $rootBin = Join-Path $RootDir "node_modules\.bin"
+    $env:Path = "$appBin;$rootBin;$env:Path"
+
     # Build production assets
     Write-Host "[*] Building application assets (npm run build)..." -ForegroundColor Cyan
     & npm.cmd run build
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "npm run build returned code $LASTEXITCODE. Checking if dist exists..."
+        Write-Warning "npm run build returned code $LASTEXITCODE. Trying npx vite build directly..."
+        & npx.cmd vite build
     }
 
     $distPath = Join-Path $AppDir "dist\index.html"
