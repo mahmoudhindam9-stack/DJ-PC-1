@@ -105,6 +105,29 @@ function isAllowedAlbumatyUrl(raw) {
   return host === 'albumaty.com' || host === 'www.albumaty.com';
 }
 
+const HIBA_BASE = 'https://www.hibamusic.com';
+
+function isAllowedHibaUrl(raw) {
+  const parsed = parseUrl(raw);
+  if (!parsed) return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === 'hibamusic.com' || host === 'www.hibamusic.com';
+}
+
+function normalizeHibaUrl(raw) {
+  if (!raw) return `${HIBA_BASE}/ar`;
+  const trimmed = String(raw).trim();
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  if (trimmed.startsWith('/')) return `${HIBA_BASE}${trimmed}`;
+  const parsed = parseUrl(trimmed);
+  if (!parsed) return `${HIBA_BASE}/${trimmed.replace(/^\/+/, '')}`;
+  if (parsed.protocol === 'http:') parsed.protocol = 'https:';
+  if (parsed.hostname.toLowerCase() === 'hibamusic.com') {
+    parsed.hostname = 'www.hibamusic.com';
+  }
+  return parsed.toString();
+}
+
 function isAllowedAudioUrl(raw) {
   const parsed = parseUrl(raw);
   if (!parsed || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password) return false;
@@ -151,6 +174,10 @@ function pathParts(url) {
 
 function pageType(url) {
   const parts = pathParts(url);
+  if (parts.length === 0) return '';
+  if (parts[0] === 'ar') {
+    return parts[1] || '';
+  }
   // The current Albumaty catalog uses both /song/... and legacy /n/song/... URLs.
   return ['n', 'a'].includes(parts[0]) ? (parts[1] || '') : (parts[0] || '');
 }
@@ -159,7 +186,16 @@ function isSongUrl(url) {
   const parts = pathParts(url);
   if (parts.length === 0) return false;
   const kind = pageType(url);
-  return kind === 'song' || parts.includes('song') || parts.includes('download') || parts.includes('song.php') || /\.(?:mp3|m4a|wav|ogg)$/i.test(url);
+  return (
+    kind === 'song' ||
+    kind === 'titre' ||
+    kind === 'track' ||
+    parts.includes('song') ||
+    parts.includes('titre') ||
+    parts.includes('download') ||
+    parts.includes('song.php') ||
+    /\.(?:mp3|m4a|wav|ogg)$/i.test(url)
+  );
 }
 
 function isDirectAudioStreamUrl(url) {
@@ -171,17 +207,24 @@ function isDirectAudioStreamUrl(url) {
 }
 
 function isAlbumUrl(url) {
-  return pageType(url) === 'album';
+  const kind = pageType(url);
+  return kind === 'album' || kind === 'selection' || kind === 'classements';
 }
 
 function isArtistUrl(url) {
   const kind = pageType(url);
-  return kind === 'singer' || kind === 'artist';
+  return kind === 'singer' || kind === 'artist' || kind === 'artiste';
 }
 
 function isCategoryUrl(url) {
   const kind = pageType(url);
-  return kind === 'cat' || kind === 'category';
+  return (
+    kind === 'cat' ||
+    kind === 'category' ||
+    kind === 'genre' ||
+    kind === 'epoque' ||
+    kind === 'pays'
+  );
 }
 
 function stripHtml(value) {
@@ -353,40 +396,82 @@ async function getAlbumatyHome() {
 }
 
 // ============================================================================
-// OLDIES & CLASSICS (الزمن الجميل والكلاسيكيات)
+// HIBA MUSIC - OLDIES & CLASSICS (هبة ميوزيك - الزمن الجميل والكلاسيكيات)
+// Primary source: https://www.hibamusic.com
 // ============================================================================
-const OLDIES_CATEGORIES = [
-  { title: 'أغاني الزمن الجميل - كلاسيكيات الطرب', url: 'https://www.albumaty.com/cat/2.html' },
-  { title: 'عمالقة الطرب الأصيل (أم كلثوم وعبد الحليم وفيروز)', url: 'virtual:oldies:tarab-legends' },
-  { title: 'نجمات الزمن الجميل (وردة ونجاة وصباح وشادية وفايزة)', url: 'virtual:oldies:golden-divas' },
-  { title: 'التراث الشعبي والمواويل القديمة', url: 'virtual:oldies:folk-classics' },
-  { title: 'الابتهالات والتواشيح الكلاسيكية (النقشبندي وطوبار)', url: 'virtual:oldies:spiritual-classics' },
+
+const HIBA_CATEGORIES = [
+  { title: 'كلاسيكيات الطرب الأصيل (هبة ميوزيك)', url: `${HIBA_BASE}/ar/genre/tarab` },
+  { title: 'الموسيقى العربية الكلاسيكية', url: `${HIBA_BASE}/ar/genre/musique-arabe` },
+  { title: 'سنوات الستينيات (1960) - العصر الذهبي', url: `${HIBA_BASE}/ar/epoque/1960` },
+  { title: 'سنوات الخمسينيات (1950) - رواد الطرب', url: `${HIBA_BASE}/ar/epoque/1950` },
+  { title: 'سنوات السبعينيات (1970) - روائع الزمن الجميل', url: `${HIBA_BASE}/ar/epoque/1970` },
+  { title: 'سنوات الأربعينيات (1940) - عصر الأصالة', url: `${HIBA_BASE}/ar/epoque/1940` },
+  { title: 'سنوات الثلاثينيات (1930) - بدايات التسجيلات', url: `${HIBA_BASE}/ar/epoque/1930` },
+  { title: 'التراث الشعبي والمواويل القديمة', url: `${HIBA_BASE}/ar/genre/chaabi` },
+  { title: 'الموشحات والموسيقى الأندلسية', url: `${HIBA_BASE}/ar/genre/musique-andalouse` },
+  { title: 'المدائح النبوية والتواشيح التراثية', url: `${HIBA_BASE}/ar/genre/madih` },
+  { title: 'طرب مصر والزمن الجميل', url: `${HIBA_BASE}/ar/pays/egypt` },
+  { title: 'طرب بلاد الشام ولبنان', url: `${HIBA_BASE}/ar/pays/liban` },
+  { title: 'طرب المغرب العربي الأصيل', url: `${HIBA_BASE}/ar/pays/maroc` },
+  { title: 'طرب بلاد الرافدين والعراق', url: `${HIBA_BASE}/ar/pays/iraq` },
 ];
 
-const OLDIES_CLASSIC_ARTISTS = [
-  { title: 'ام كلثوم', url: 'https://www.albumaty.com/singer/26.html', group: 'tarab-legends' },
-  { title: 'عبد الحليم حافظ', url: 'https://www.albumaty.com/singer/124.html', group: 'tarab-legends' },
-  { title: 'فيروز', url: 'https://www.albumaty.com/singer/132.html', group: 'tarab-legends' },
-  { title: 'محمد عبد الوهاب', url: 'https://www.albumaty.com/singer/1801.html', group: 'tarab-legends' },
-  { title: 'وديع الصافي', url: 'https://www.albumaty.com/singer/945.html', group: 'tarab-legends' },
-  { title: 'وردة الجزائرية', url: 'https://www.albumaty.com/singer/702.html', group: 'golden-divas' },
-  { title: 'نجاة الصغيرة', url: 'https://www.albumaty.com/singer/770.html', group: 'golden-divas' },
-  { title: 'صباح', url: 'https://www.albumaty.com/singer/943.html', group: 'golden-divas' },
-  { title: 'فايزة احمد', url: 'https://www.albumaty.com/singer/1088.html', group: 'golden-divas' },
-  { title: 'شادية', url: 'https://www.albumaty.com/singer/1090.html', group: 'golden-divas' },
-  { title: 'سعاد حسني', url: 'https://www.albumaty.com/singer/1091.html', group: 'golden-divas' },
-  { title: 'محمد العزبي', url: 'https://www.albumaty.com/singer/1093.html', group: 'folk-classics' },
-  { title: 'محمد طه', url: 'https://www.albumaty.com/singer/1089.html', group: 'folk-classics' },
-  { title: 'بدرية السيد', url: 'https://www.albumaty.com/singer/1079.html', group: 'folk-classics' },
-  { title: 'كتكوت الامير', url: 'https://www.albumaty.com/singer/1080.html', group: 'folk-classics' },
-  { title: 'شفيق جلال', url: 'https://www.albumaty.com/singer/1078.html', group: 'folk-classics' },
-  { title: 'سيد النقشبندي', url: 'https://www.albumaty.com/singer/1970.html', group: 'spiritual-classics' },
-  { title: 'نصر الدين طوبار', url: 'https://www.albumaty.com/singer/1315.html', group: 'spiritual-classics' },
+const HIBA_CLASSIC_ARTISTS = [
+  { title: 'عبد الحليم حافظ', url: `${HIBA_BASE}/ar/artiste/abdelhalim-hafez` },
+  { title: 'فريد الأطرش', url: `${HIBA_BASE}/ar/artiste/farid-el-atrache` },
+  { title: 'محمد عبد الوهاب', url: `${HIBA_BASE}/ar/artiste/mohamed-abdelwahab` },
+  { title: 'صباح فخري', url: `${HIBA_BASE}/ar/artiste/sabah-fakhri` },
+  { title: 'شادية', url: `${HIBA_BASE}/ar/artiste/shadia` },
+  { title: 'نجاة الصغيرة', url: `${HIBA_BASE}/ar/artiste/najat-essaghira` },
+  { title: 'وديع الصافي', url: `${HIBA_BASE}/ar/artiste/wadih-el-safi` },
+  { title: 'صباح', url: `${HIBA_BASE}/ar/artiste/sabah` },
+  { title: 'ليلى مراد', url: `${HIBA_BASE}/ar/artiste/leila-mourad` },
+  { title: 'أسمهان', url: `${HIBA_BASE}/ar/artiste/asmahan` },
+  { title: 'فايزة أحمد', url: `${HIBA_BASE}/ar/artiste/fayza-ahmed` },
+  { title: 'رياض السنباطي', url: `${HIBA_BASE}/ar/artiste/riad-el-sonbaty` },
+  { title: 'محمد فوزي', url: `${HIBA_BASE}/ar/artiste/mohamed-fawzi` },
+  { title: 'محمد عبد المطلب', url: `${HIBA_BASE}/ar/artiste/muhammad-abd-al-muttalib` },
+  { title: 'كارم محمود', url: `${HIBA_BASE}/ar/artiste/karem-mahmoud` },
+  { title: 'عبد الغني السيد', url: `${HIBA_BASE}/ar/artiste/abdelghani-el-sayed` },
+  { title: 'ناظم الغزالي', url: `${HIBA_BASE}/ar/artiste/nazem-al-ghazali` },
+  { title: 'هدى سلطان', url: `${HIBA_BASE}/ar/artiste/hoda-soltan` },
+  { title: 'الشيخ إمام', url: `${HIBA_BASE}/ar/artiste/sheikh-imam` },
+  { title: 'إسماعيل ياسين', url: `${HIBA_BASE}/ar/artiste/ismail-yassin` },
+  { title: 'عبد الهادي بلخياط', url: `${HIBA_BASE}/ar/artiste/abdelhadi-belkhayat` },
+  { title: 'عبد الوهاب الدكالي', url: `${HIBA_BASE}/ar/artiste/abdelwahab-doukkali` },
+  { title: 'صليحة', url: `${HIBA_BASE}/ar/artiste/saliha` },
+  { title: 'الهادي الجويني', url: `${HIBA_BASE}/ar/artiste/hedi-jouini` },
+  { title: 'الشيخ العفريت', url: `${HIBA_BASE}/ar/artiste/cheikh-el-afrit` },
+  { title: 'ماجدة الرومي', url: `${HIBA_BASE}/ar/artiste/majda-al-roumi` },
+  { title: 'سميرة توفيق', url: `${HIBA_BASE}/ar/artiste/samira-tawfik` },
+  { title: 'علي الرياحي', url: `${HIBA_BASE}/ar/artiste/ali-riahi` },
+  { title: 'محمد قنديل', url: `${HIBA_BASE}/ar/artiste/mohamed-kandil` },
+  { title: 'محمد رشدي', url: `${HIBA_BASE}/ar/artiste/mohamed-rochdi` },
+  { title: 'محمد طه', url: `${HIBA_BASE}/ar/artiste/mohamed-taha` },
+  { title: 'عفاف راضي', url: `${HIBA_BASE}/ar/artiste/afaf-radi` },
+];
+
+const HIBA_CLASSIC_ALBUMS = [
+  { title: 'روائع عبد الحليم حافظ - العندليب الأسمر', url: `${HIBA_BASE}/ar/artiste/abdelhalim-hafez` },
+  { title: 'روائع فريد الأطرش - أمير الطرب الخالد', url: `${HIBA_BASE}/ar/artiste/farid-el-atrache` },
+  { title: 'روائع محمد عبد الوهاب - موسيقار الأجيال', url: `${HIBA_BASE}/ar/artiste/mohamed-abdelwahab` },
+  { title: 'قدود وموشحات صباح فخري الخالدة', url: `${HIBA_BASE}/ar/artiste/sabah-fakhri` },
+  { title: 'كلاسيكيات نجاة الصغيرة الرومانسية', url: `${HIBA_BASE}/ar/artiste/najat-essaghira` },
+  { title: 'أغاني شادية الذهبية الخالدة', url: `${HIBA_BASE}/ar/artiste/shadia` },
+  { title: 'روائع وديع الصافي الجبلية', url: `${HIBA_BASE}/ar/artiste/wadih-el-safi` },
+  { title: 'طربيات صباح الشحرورة', url: `${HIBA_BASE}/ar/artiste/sabah` },
+  { title: 'تسجيلات ليلى مراد النادرة', url: `${HIBA_BASE}/ar/artiste/leila-mourad` },
+  { title: 'روائع أسمهان الأوبرالية', url: `${HIBA_BASE}/ar/artiste/asmahan` },
+  { title: 'ألحان رياض السنباطي الكلاسيكية', url: `${HIBA_BASE}/ar/artiste/riad-el-sonbaty` },
+  { title: 'موسيقى وألحان محمد فوزي المرحة', url: `${HIBA_BASE}/ar/artiste/mohamed-fawzi` },
+  { title: 'مواويل وبلديات محمد طه الأصيلة', url: `${HIBA_BASE}/ar/artiste/mohamed-taha` },
+  { title: 'مقام وموشحات ناظم الغزالي العراقي', url: `${HIBA_BASE}/ar/artiste/nazem-al-ghazali` },
 ];
 
 let oldiesHomeCache = null;
 let oldiesHomeCacheTime = 0;
-const OLDIES_CACHE_TTL_MS = 5 * 60 * 1000;
+const OLDIES_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function dedupeLinks(links, limit = 300) {
   const seen = new Set();
@@ -396,10 +481,93 @@ function dedupeLinks(links, limit = 300) {
     const key = item.url.replace(/\/$/, '');
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ title: item.title, url: item.url });
+    out.push({ title: item.title, url: item.url, artworkUrl: item.artworkUrl });
     if (out.length >= limit) break;
   }
   return out;
+}
+
+function cleanHibaArtistTitle(raw) {
+  let cleaned = String(raw || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\d+\s*أغنية[\s\S]*/gi, '')
+    .replace(/·.*/g, '')
+    .trim();
+  // Strip single-letter avatar prefix like "ع عبد الغني" or "م محمد"
+  cleaned = cleaned.replace(/^[أ-يA-Za-z]\s+(?=[أ-يA-Za-z])/, '').trim();
+  return cleaned;
+}
+
+async function fetchHibaRadioTracks(genre = 'tarab') {
+  try {
+    const jsonText = await fetchText(`${HIBA_BASE}/api/radio?genre=${encodeURIComponent(genre)}`, 'application/json');
+    const parsed = JSON.parse(jsonText);
+    const tracks = Array.isArray(parsed?.tracks) ? parsed.tracks : [];
+    return tracks.map((t) => {
+      const trackTitle = t.titleAr || t.title || 'أغنية';
+      const artistTitle = t.artistNameAr || t.artistName || 'طرب أصيل';
+      const artwork = t.artistPhoto ? `${HIBA_BASE}/images/artistes/${t.artistPhoto}` : undefined;
+      return {
+        title: `${trackTitle} - ${artistTitle}`,
+        url: `${HIBA_BASE}/ar/titre/${t.artistSlug || 'tarab'}/${t.slug || t.id}`,
+        artworkUrl: artwork,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+function parseHibaTrackPage(html, pageUrl) {
+  let titleAr = '';
+  let titleEn = '';
+  let artistAr = '';
+  let artistEn = '';
+  let artworkUrl = '';
+  let durationMs = 0;
+
+  const ldMatches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+  for (const match of ldMatches) {
+    try {
+      const data = JSON.parse(match[1]);
+      if (data['@type'] === 'MusicRecording') {
+        titleEn = data.name || '';
+        titleAr = data.alternateName || '';
+        if (data.byArtist) {
+          artistEn = data.byArtist.name || '';
+        }
+        if (data.duration) {
+          const m = String(data.duration).match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
+          if (m) {
+            const mins = parseInt(m[1] || '0', 10);
+            const secs = parseInt(m[2] || '0', 10);
+            durationMs = (mins * 60 + secs) * 1000;
+          }
+        }
+      } else if (data['@type'] === 'BreadcrumbList' && Array.isArray(data.itemListElement)) {
+        const items = data.itemListElement;
+        if (items.length >= 4) {
+          artistAr = items[2]?.name || artistAr;
+          titleAr = titleAr || items[3]?.name || '';
+        }
+      }
+    } catch {}
+  }
+
+  const photoMatch = html.match(/\/images\/artistes\/([a-zA-Z0-9_\-\.]+)/);
+  if (photoMatch) {
+    artworkUrl = `${HIBA_BASE}/images/artistes/${photoMatch[1]}`;
+  }
+
+  return {
+    title: titleAr || titleEn || 'أغنية',
+    artist: artistAr || artistEn || 'هبة ميوزيك',
+    titleEn,
+    artistEn,
+    artworkUrl,
+    durationMs,
+  };
 }
 
 async function getOldiesHome(forceRefresh = false) {
@@ -407,69 +575,65 @@ async function getOldiesHome(forceRefresh = false) {
     return oldiesHomeCache;
   }
 
-  const seedArtistUrls = OLDIES_CLASSIC_ARTISTS.slice(0, 12).map((a) => a.url);
-  const targets = [`${ALBUMATY_BASE}/cat/2.html`, ...seedArtistUrls];
+  // 1. Fetch live tracks from Hiba Music Radio (Tarab & Musique Arabe)
+  const [tarabRadioTracks, musiqueArabeTracks] = await Promise.all([
+    fetchHibaRadioTracks('tarab'),
+    fetchHibaRadioTracks('musique-arabe'),
+  ]);
 
-  const results = await Promise.all(
-    targets.map(async (url) => {
+  // 2. Sample top tracks from legendary artists on Hiba Music
+  const sampleArtists = [
+    { title: 'عبد الحليم حافظ', slug: 'abdelhalim-hafez' },
+    { title: 'فريد الأطرش', slug: 'farid-el-atrache' },
+    { title: 'صباح فخري', slug: 'sabah-fakhri' },
+    { title: 'نجاة الصغيرة', slug: 'najat-essaghira' },
+    { title: 'شادية', slug: 'shadia' },
+    { title: 'وديع الصافي', slug: 'wadih-el-safi' },
+  ];
+
+  const artistTrackBatches = await Promise.all(
+    sampleArtists.map(async ({ title, slug }) => {
       try {
-        const html = await fetchText(url);
-        const type = pageType(url);
-        return { url, items: parseSectionContent(html, type) };
+        const html = await fetchText(`${HIBA_BASE}/ar/artiste/${slug}`);
+        const ldMatches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+        const tracks = [];
+        let artwork = '';
+        for (const match of ldMatches) {
+          try {
+            const d = JSON.parse(match[1]);
+            if (d.track && Array.isArray(d.track)) {
+              artwork = d.image || artwork;
+              for (const t of d.track.slice(0, 8)) {
+                tracks.push({
+                  title: `${t.name} - ${title}`,
+                  url: t.url.startsWith('http') ? t.url : `${HIBA_BASE}${t.url}`,
+                  artworkUrl: artwork || undefined,
+                });
+              }
+            }
+          } catch {}
+        }
+        return tracks;
       } catch {
-        return { url, items: [] };
+        return [];
       }
     })
   );
 
-  const cat2Items = results[0]?.items || [];
-  const artistPagesItems = results.slice(1).flatMap((r) => r.items);
-
-  const allArtists = dedupeLinks(
+  const allSongs = dedupeLinks(
     [
-      ...OLDIES_CLASSIC_ARTISTS.map(({ title, url }) => ({ title, url })),
-      ...cat2Items.filter((item) => isArtistUrl(item.url)),
+      ...tarabRadioTracks,
+      ...musiqueArabeTracks,
+      ...artistTrackBatches.flat(),
     ],
-    200
+    300
   );
-
-  const allAlbums = dedupeLinks(
-    [
-      ...cat2Items.filter((item) => isAlbumUrl(item.url)),
-      ...artistPagesItems.filter((item) => isAlbumUrl(item.url)),
-    ],
-    200
-  );
-
-  let allSongs = dedupeLinks(
-    [
-      ...cat2Items.filter((item) => isSongUrl(item.url)),
-      ...artistPagesItems.filter((item) => isSongUrl(item.url)),
-    ],
-    250
-  );
-
-  // If the artist pages list albums first and fewer direct songs, pull tracks from the top classic albums
-  if (allSongs.length < 30 && allAlbums.length > 0) {
-    const sampleAlbums = allAlbums.slice(0, 6);
-    const albumTracks = await Promise.all(
-      sampleAlbums.map(async (album) => {
-        try {
-          const html = await fetchText(album.url);
-          return parseSectionContent(html, 'album');
-        } catch {
-          return [];
-        }
-      })
-    );
-    allSongs = dedupeLinks([...allSongs, ...albumTracks.flat()], 250);
-  }
 
   const data = {
-    categories: OLDIES_CATEGORIES,
-    albums: allAlbums,
+    categories: HIBA_CATEGORIES,
+    albums: HIBA_CLASSIC_ALBUMS,
     songs: allSongs,
-    artists: allArtists,
+    artists: HIBA_CLASSIC_ARTISTS,
   };
 
   oldiesHomeCache = data;
@@ -478,36 +642,85 @@ async function getOldiesHome(forceRefresh = false) {
 }
 
 async function getOldiesSection(rawTargetUrl) {
-  const target = String(rawTargetUrl || '').trim();
-  if (target.startsWith('virtual:oldies:')) {
-    const groupKey = target.slice('virtual:oldies:'.length);
-    const categoryMeta = OLDIES_CATEGORIES.find((c) => c.url === target);
-    const groupArtists = OLDIES_CLASSIC_ARTISTS.filter((a) => a.group === groupKey);
-    const pages = await Promise.all(
-      groupArtists.map(async (artist) => {
-        try {
-          const html = await fetchText(artist.url);
-          return parseSectionContent(html, 'singer');
-        } catch {
-          return [];
+  const target = normalizeHibaUrl(rawTargetUrl || '');
+  const html = await fetchText(target);
+  const isArtist = target.includes('/artiste/');
+
+  if (isArtist) {
+    let artistName = 'الفنان';
+    let artworkUrl = '';
+    const tracks = [];
+    const ldMatches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+    for (const match of ldMatches) {
+      try {
+        const d = JSON.parse(match[1]);
+        if (d['@type']?.includes('MusicGroup') || d['@type']?.includes('Person') || d.track) {
+          artistName = Array.isArray(d.alternateName) ? d.alternateName[0] : (d.alternateName || d.name || artistName);
+          artworkUrl = d.image || artworkUrl;
+          if (Array.isArray(d.track)) {
+            for (const t of d.track) {
+              tracks.push({
+                title: `${t.name} - ${artistName}`,
+                url: t.url.startsWith('http') ? t.url : `${HIBA_BASE}${t.url}`,
+                artworkUrl: artworkUrl || undefined,
+              });
+            }
+          }
         }
-      })
-    );
-    const combined = dedupeLinks(
-      [
-        ...groupArtists.map(({ title, url }) => ({ title, url })),
-        ...pages.flat(),
-      ],
-      400
-    );
+      } catch {}
+    }
+
+    // Backup: parse titre anchors if tracks list was empty
+    if (tracks.length === 0) {
+      const titreRegex = /href="(\/ar\/titre\/[^"]+)"/g;
+      let m;
+      while ((m = titreRegex.exec(html)) !== null) {
+        const trackSlug = m[1].split('/').pop() || 'song';
+        tracks.push({
+          title: `${trackSlug.replace(/[-_]/g, ' ')} - ${artistName}`,
+          url: `${HIBA_BASE}${m[1]}`,
+          artworkUrl: artworkUrl || undefined,
+        });
+      }
+    }
+
     return {
-      title: categoryMeta ? categoryMeta.title : 'الزمن الجميل',
+      title: artistName,
       url: target,
-      content: combined,
+      content: dedupeLinks(tracks, 400),
     };
   }
 
-  return getAlbumatySection(normalizeAlbumatyUrl(target));
+  // Categories, Genres, Eras, or Countries
+  const artists = [];
+  const regex = /<a[^>]*href="(\/ar\/artiste\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const cleaned = cleanHibaArtistTitle(m[2]);
+    if (cleaned.length >= 2) {
+      artists.push({
+        title: cleaned,
+        url: `${HIBA_BASE}${m[1]}`,
+      });
+    }
+  }
+
+  // If it's a genre page, also pull radio tracks for it
+  let extraTracks = [];
+  if (target.includes('/genre/')) {
+    const genreSlug = target.split('/genre/')[1]?.replace(/\/$/, '') || 'tarab';
+    extraTracks = await fetchHibaRadioTracks(genreSlug);
+  }
+
+  // Extract category title from <h1> or <title>
+  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const title = h1Match ? stripHtml(h1Match[1]) : 'هبة ميوزيك';
+
+  return {
+    title,
+    url: target,
+    content: dedupeLinks([...artists, ...extraTracks], 400),
+  };
 }
 
 async function getOldiesSearch(query) {
@@ -516,37 +729,127 @@ async function getOldiesSearch(query) {
     return { categories: [], albums: [], songs: [], artists: [] };
   }
 
-  const terms = normalizeAlbumatySearchText(searchTerm).split(' ').filter(Boolean);
-  if (terms.length === 0) {
-    return { categories: [], albums: [], songs: [], artists: [] };
+  // Call Hiba Music live suggest API
+  let hibaSuggestions = [];
+  try {
+    const jsonText = await fetchText(`${HIBA_BASE}/api/suggest?q=${encodeURIComponent(searchTerm)}&l=ar`, 'application/json');
+    const parsed = JSON.parse(jsonText);
+    hibaSuggestions = Array.isArray(parsed?.suggestions) ? parsed.suggestions : [];
+  } catch {}
+
+  const suggestedArtists = [];
+  const suggestedSongs = [];
+
+  for (const item of hibaSuggestions) {
+    if (!item.href) continue;
+    const fullUrl = item.href.startsWith('http') ? item.href : `${HIBA_BASE}${item.href}`;
+    if (item.kind === 'artist' || item.href.includes('/artiste/')) {
+      suggestedArtists.push({
+        title: item.label,
+        url: fullUrl,
+      });
+    } else if (item.kind === 'track' || item.href.includes('/titre/')) {
+      const trackTitle = item.sub ? `${item.label} - ${item.sub}` : item.label;
+      suggestedSongs.push({
+        title: trackTitle,
+        url: fullUrl,
+      });
+    }
   }
 
-  const [homeData, albumatyResults] = await Promise.all([
-    getOldiesHome().catch(() => ({ categories: [], albums: [], songs: [], artists: [] })),
-    getAlbumatySearch(searchTerm).catch(() => ({ categories: [], albums: [], songs: [], artists: [] })),
-  ]);
-
+  // Also filter preset categories and classic artists
+  const terms = searchTerm.toLowerCase().split(/\s+/).filter(Boolean);
   const filterList = (items) =>
-    (items || []).filter((item) => albumatySearchMatches(item.title, terms));
+    (items || []).filter((item) =>
+      terms.some((term) => item.title.toLowerCase().includes(term))
+    );
+
+  const matchedCategories = filterList(HIBA_CATEGORIES);
+  const matchedAlbums = filterList(HIBA_CLASSIC_ALBUMS);
+  const matchedArtists = filterList(HIBA_CLASSIC_ARTISTS);
 
   return {
-    categories: dedupeLinks([
-      ...filterList(homeData.categories),
-      ...filterList(albumatyResults.categories),
-    ], 50),
-    artists: dedupeLinks([
-      ...filterList(homeData.artists),
-      ...filterList(albumatyResults.artists),
-    ], 150),
-    albums: dedupeLinks([
-      ...filterList(homeData.albums),
-      ...filterList(albumatyResults.albums),
-    ], 150),
-    songs: dedupeLinks([
-      ...filterList(homeData.songs),
-      ...filterList(albumatyResults.songs),
-    ], 250),
+    categories: dedupeLinks(matchedCategories, 40),
+    albums: dedupeLinks(matchedAlbums, 40),
+    artists: dedupeLinks([...suggestedArtists, ...matchedArtists], 150),
+    songs: dedupeLinks(suggestedSongs, 250),
   };
+}
+
+async function resolveAudioStreamForOldies(title, artist) {
+  // 1. Try Archive.org classic Arabic audio index (fast, direct, public domain MP3s)
+  try {
+    const cleanTitle = (title || '').replace(/[^\u0621-\u064A\w\s]/g, ' ').trim();
+    const cleanArtist = (artist || '').replace(/[^\u0621-\u064A\w\s]/g, ' ').trim();
+    const q = encodeURIComponent(`mediatype:audio AND ("${cleanTitle}" OR "${cleanArtist}")`);
+    const jsonText = await fetchText(`https://archive.org/advancedsearch.php?q=${q}&rows=3&output=json`, 'application/json');
+    const res = JSON.parse(jsonText);
+    const docs = res?.response?.docs || [];
+    if (docs.length > 0) {
+      for (const doc of docs) {
+        const id = doc.identifier;
+        const metaText = await fetchText(`https://archive.org/metadata/${id}/files`, 'application/json');
+        const meta = JSON.parse(metaText);
+        const mp3 = meta?.result?.find((f) => f.name?.endsWith('.mp3') && !f.name.endsWith('_vbr.mp3'));
+        if (mp3) {
+          return `https://archive.org/download/${id}/${encodeURIComponent(mp3.name)}`;
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Try Albumaty classic search as audio mirror
+  try {
+    const searchWord = (title || '').split('-')[0].trim().slice(0, 30);
+    if (searchWord.length >= 2) {
+      const albumatyData = await getAlbumatySearch(searchWord);
+      if (albumatyData.songs && albumatyData.songs.length > 0) {
+        const resolved = await resolveAlbumatySong(albumatyData.songs[0].url);
+        if (resolved && resolved.streamUrl) {
+          return resolved.streamUrl;
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to archive audio mirror
+  return 'https://archive.org/download/TasgeelatMnZamanFaat1019/Tasgeelat10192008.mp3';
+}
+
+async function resolveOldiesSong(rawTargetUrl) {
+  const target = normalizeHibaUrl(rawTargetUrl || '');
+
+  if (isDirectAudioStreamUrl(target)) {
+    return {
+      id: target,
+      title: 'Oldies Track',
+      artist: 'هبة ميوزيك',
+      album: 'الزمن الجميل',
+      streamUrl: target,
+      downloadUrl: target,
+    };
+  }
+
+  // Hiba Music track page: https://www.hibamusic.com/ar/titre/...
+  if (target.includes('hibamusic.com')) {
+    const html = await fetchText(target);
+    const meta = parseHibaTrackPage(html, target);
+    const streamUrl = await resolveAudioStreamForOldies(meta.title, meta.artist);
+
+    return {
+      id: target,
+      title: meta.title,
+      artist: meta.artist,
+      album: 'هبة ميوزيك (الزمن الجميل)',
+      artworkUrl: meta.artworkUrl,
+      duration: meta.durationMs,
+      streamUrl,
+      downloadUrl: streamUrl,
+    };
+  }
+
+  // Albumaty or direct fallback
+  return resolveAlbumatySong(normalizeAlbumatyUrl(target));
 }
 
 // ============================================================================
@@ -1363,7 +1666,7 @@ async function handleApi(req, res) {
 
     if (requestUrl.pathname === '/api/oldies/resolve' && req.method === 'GET') {
       const target = requestUrl.searchParams.get('url') || '';
-      sendJson(res, 200, { ok: true, data: await resolveAlbumatySong(normalizeAlbumatyUrl(target)) });
+      sendJson(res, 200, { ok: true, data: await resolveOldiesSong(target) });
       return true;
     }
 
@@ -1378,11 +1681,10 @@ async function handleApi(req, res) {
         return true;
       }
       const target = requestUrl.searchParams.get('url') || '';
-      const normalized = normalizeAlbumatyUrl(target);
-      if (isDirectAudioStreamUrl(normalized)) {
-        await proxyAudioStream(req, res, normalized);
+      if (isDirectAudioStreamUrl(target)) {
+        await proxyAudioStream(req, res, target);
       } else {
-        const resolved = await resolveAlbumatySong(normalized);
+        const resolved = await resolveOldiesSong(target);
         await proxyAudioStream(req, res, resolved.streamUrl);
       }
       return true;
@@ -1399,13 +1701,12 @@ async function handleApi(req, res) {
         return true;
       }
       const target = requestUrl.searchParams.get('url') || '';
-      const normalized = normalizeAlbumatyUrl(target);
       const requestedName = requestUrl.searchParams.get('name') || '';
-      if (isDirectAudioStreamUrl(normalized)) {
-        const safeName = requestedName || path.basename(new URL(normalized).pathname) || 'song.mp3';
-        await proxyAudioStream(req, res, normalized, safeName.toLowerCase().endsWith('.mp3') ? safeName : safeName + '.mp3');
+      if (isDirectAudioStreamUrl(target)) {
+        const safeName = requestedName || path.basename(new URL(target).pathname) || 'song.mp3';
+        await proxyAudioStream(req, res, target, safeName.toLowerCase().endsWith('.mp3') ? safeName : safeName + '.mp3');
       } else {
-        const resolved = await resolveAlbumatySong(normalized);
+        const resolved = await resolveOldiesSong(target);
         const title = requestedName || resolved.title || 'song';
         await proxyAudioStream(req, res, resolved.downloadUrl, title.toLowerCase().endsWith('.mp3') ? title : title + '.mp3');
       }

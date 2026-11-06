@@ -54,13 +54,16 @@ type CatalogSubTab = 'SONGS' | 'ARTISTS' | 'ALBUMS' | 'CATEGORIES';
 
 function isSong(url: string): boolean {
   try {
-    const parsed = new URL(url.startsWith('/') ? `https://www.albumaty.com${url}` : url);
+    const parsed = new URL(url.startsWith('/') ? `https://www.hibamusic.com${url}` : url);
     const parts = parsed.pathname.toLowerCase().split('/').filter(Boolean);
     if (parts.length === 0) return false;
-    const kind = ['n', 'a'].includes(parts[0]) ? (parts[1] || '') : (parts[0] || '');
+    const kind = ['n', 'a', 'ar'].includes(parts[0]) ? (parts[1] || '') : (parts[0] || '');
     return (
       kind === 'song' ||
+      kind === 'titre' ||
+      kind === 'track' ||
       parts.includes('song') ||
+      parts.includes('titre') ||
       parts.includes('download') ||
       parts.includes('song.php') ||
       /\.(?:mp3|m4a|wav|ogg)$/i.test(parsed.pathname)
@@ -150,8 +153,8 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
         error instanceof Error
           ? error.message
           : isArabic
-          ? 'تعذر تحميل الزمن الجميل والكلاسيكيات حالياً.'
-          : 'Unable to load Oldies & Classics right now.'
+          ? 'تعذر تحميل هبة ميوزيك (الزمن الجميل) حالياً.'
+          : 'Unable to load Hiba Music (Oldies & Classics) right now.'
       );
     } finally {
       setLoading(false);
@@ -620,7 +623,7 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
             }}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            {isArabic ? 'الزمن الجميل والكلاسيكيات' : 'Oldies & Classics'}
+            {isArabic ? 'هبة ميوزيك (الزمن الجميل)' : 'Hiba Music (Oldies)'}
           </button>
           <button
             onClick={() => setSource('AUDIUS')}
@@ -649,8 +652,8 @@ export const OnlineMusicScreen: React.FC<OnlineMusicScreenProps> = ({
               placeholder={
                 source === 'OLDIES'
                   ? isArabic
-                    ? 'ابحث في الزمن الجميل...'
-                    : 'Search Oldies & Classics...'
+                    ? 'ابحث في هبة ميوزيك (الزمن الجميل)...'
+                    : 'Search Hiba Music (Oldies)...'
                   : isArabic
                   ? 'ابحث عن أغنية أو فنان...'
                   : 'Search song or artist...'

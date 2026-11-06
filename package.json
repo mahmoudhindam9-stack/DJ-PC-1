@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node app/scripts/dev.js",
     "start": "node app/scripts/dev.js",
-    "build": "npm --prefix app run build && node -e \"const fs=require('fs'); fs.cpSync('app/dist', 'dist', {recursive:true, force:true});\"",
+    "build": "npm --prefix app install --include=dev && npm --prefix app run build && node -e \"const fs=require('fs'); fs.cpSync('app/dist', 'dist', {recursive:true, force:true});\"",
+    "postinstall": "npm --prefix app install --include=dev",
     "preview": "npm --prefix app run preview",
     "lint": "npm --prefix app run lint"
   },

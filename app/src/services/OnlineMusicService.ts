@@ -131,8 +131,8 @@ class OnlineMusicService {
     return {
       id: stableId || `${isOldies ? 'oldies' : 'albumaty'}_${encodeURIComponent(track.id)}`,
       title: track.title,
-      artist: track.artist || (isOldies ? 'الزمن الجميل' : 'Albumaty'),
-      album: track.album || (isOldies ? 'Oldies & Classics' : 'Albumaty Online'),
+      artist: track.artist || (isOldies ? 'هبة ميوزيك (الزمن الجميل)' : 'Albumaty'),
+      album: track.album || (isOldies ? 'هبة ميوزيك' : 'Albumaty Online'),
       duration: track.duration || 0,
       uri: isOldies
         ? this.getOldiesStreamEndpoint(streamTarget)
