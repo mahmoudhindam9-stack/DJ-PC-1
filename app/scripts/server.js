@@ -8,9 +8,13 @@ import { randomUUID } from 'node:crypto';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const APP_DIR = path.resolve(__dirname, '..');
-const DIST_DIR = fs.existsSync(path.join(APP_DIR, 'dist'))
-  ? path.join(APP_DIR, 'dist')
-  : APP_DIR;
+const ROOT_DIR = path.resolve(APP_DIR, '..');
+const DIST_DIR = [
+  path.join(APP_DIR, 'dist'),
+  path.join(ROOT_DIR, 'dist'),
+  APP_DIR,
+].find((dir) => fs.existsSync(dir) && fs.existsSync(path.join(dir, 'index.html'))) ||
+(fs.existsSync(path.join(APP_DIR, 'dist')) ? path.join(APP_DIR, 'dist') : APP_DIR);
 
 function resolveServerPort() {
   const args = process.argv.slice(2);

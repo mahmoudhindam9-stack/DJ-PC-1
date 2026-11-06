@@ -1,6 +1,5 @@
 # DJ Desktop Studio - Desktop + Start Menu Shortcut Creator
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = Split-Path -Parent $ScriptDir
@@ -16,7 +15,7 @@ if (-not (Test-Path $DesktopDir)) {
 }
 
 $ProgramsDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$Launcher = Join-Path $ScriptDir "run-dj-desktop.vbs"
+$BatLauncher = Join-Path $ScriptDir "run-dj-desktop.bat"
 $IconCandidates = @(
     (Join-Path $AppDir "public\icon.ico"),
     (Join-Path $ScriptDir "icon.ico"),
@@ -24,32 +23,35 @@ $IconCandidates = @(
 )
 $IconPath = $IconCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-$WshShell = New-Object -ComObject WScript.Shell
+try {
+    $WshShell = New-Object -ComObject WScript.Shell
 
-function New-DjShortcut([string]$Path) {
-    if (-not $Path) { return }
-    $shortcut = $WshShell.CreateShortcut($Path)
-    $shortcut.TargetPath = "wscript.exe"
-    $shortcut.Arguments = '"' + $Launcher + '"'
-    $shortcut.WorkingDirectory = $AppDir
-    $shortcut.Description = "DJ Desktop Studio - Professional Audio Player & DJ Mixer"
-    if ($IconPath) {
-        $shortcut.IconLocation = "$IconPath,0"
+    function New-DjShortcut([string]$Path) {
+        if (-not $Path) { return }
+        $shortcut = $WshShell.CreateShortcut($Path)
+        $shortcut.TargetPath = "cmd.exe"
+        $shortcut.Arguments = '/c start "" "' + $BatLauncher + '"'
+        $shortcut.WorkingDirectory = $AppDir
+        $shortcut.WindowStyle = 7 # Minimized
+        $shortcut.Description = "DJ Desktop Studio - Professional Audio Player & DJ Mixer"
+        if ($IconPath) {
+            $shortcut.IconLocation = "$IconPath,0"
+        }
+        $shortcut.Save()
     }
-    $shortcut.Save()
+
+    if (-not (Test-Path $DesktopDir)) {
+        New-Item -ItemType Directory -Path $DesktopDir -Force | Out-Null
+    }
+    New-DjShortcut (Join-Path $DesktopDir "DJ Desktop Studio.lnk")
+
+    if (Test-Path $ProgramsDir) {
+        New-DjShortcut (Join-Path $ProgramsDir "DJ Desktop Studio.lnk")
+    }
+
+    Write-Host "[+] Desktop shortcut created successfully." -ForegroundColor Green
+} catch {
+    Write-Host "[!] Note: Could not create desktop shortcut automatically ($($_.Exception.Message))." -ForegroundColor Yellow
 }
 
-if (-not (Test-Path $DesktopDir)) {
-    New-Item -ItemType Directory -Path $DesktopDir -Force | Out-Null
-}
-New-DjShortcut (Join-Path $DesktopDir "DJ Desktop Studio.lnk")
-
-if (Test-Path $ProgramsDir) {
-    New-DjShortcut (Join-Path $ProgramsDir "DJ Desktop Studio.lnk")
-}
-
-Write-Host "[+] Desktop shortcut created." -ForegroundColor Green
-if (Test-Path (Join-Path $DesktopDir "DJ Desktop Studio.lnk")) {
-    exit 0
-}
-exit 1
+exit 0

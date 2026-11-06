@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ThemeColors } from '../../types';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
+import { downloadSetupBat, downloadUninstallBat } from '../../utils/setupDownloader';
 
 import { Trash2, FolderTree } from 'lucide-react';
 
@@ -163,12 +164,20 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                 </div>
               </div>
 
-              {/* Download the entire current PC package, not a standalone script. */}
+              {/* Download buttons: Full PC package + direct setup.bat */}
               <div className="flex flex-wrap items-center gap-3">
-                <a href={PC_PACKAGE_URL} className="flex-1 min-w-[240px] py-3 px-5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2 transition-transform active:scale-95">
+                <a href={PC_PACKAGE_URL} className="flex-1 min-w-[200px] py-3 px-5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2 transition-transform active:scale-95">
                   <Download className="w-4 h-4" />
                   <span>{isArabic ? 'تحميل حزمة ويندوز كاملة ومحدّثة' : 'Download complete, updated Windows package'}</span>
                 </a>
+                <button
+                  type="button"
+                  onClick={downloadSetupBat}
+                  className="py-3 px-4 rounded-xl font-bold text-sm bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 flex items-center justify-center gap-2 transition-transform active:scale-95"
+                >
+                  <Terminal className="w-4 h-4" />
+                  <span>{isArabic ? 'تحميل setup.bat المحدث' : 'Download Updated setup.bat'}</span>
+                </button>
                 <a href="https://github.com/mahmoudhindam9-stack/DJ-PC-1/releases/latest" target="_blank" rel="noreferrer" className="py-3 px-4 rounded-xl font-bold text-sm bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 flex items-center justify-center gap-2">
                   <ExternalLink className="w-4 h-4" />
                   <span>{isArabic ? 'تفاصيل الإصدار' : 'Release details'}</span>
@@ -458,6 +467,14 @@ export const DesktopSetupModal: React.FC<DesktopSetupModalProps> = ({
                   <Trash2 className="w-4 h-4" />
                   <span>{isArabic ? 'تحميل الحزمة الكاملة التي تشمل uninstall.bat' : 'Download full package with uninstall.bat'}</span>
                 </a>
+                <button
+                  type="button"
+                  onClick={downloadUninstallBat}
+                  className="py-3 px-4 rounded-xl font-bold text-sm bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 flex items-center justify-center gap-2 transition-transform active:scale-95"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isArabic ? 'تحميل uninstall.bat المحدث' : 'Download Updated uninstall.bat'}</span>
+                </button>
               </div>
 
               {/* What gets removed list */}

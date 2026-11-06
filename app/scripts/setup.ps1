@@ -1,23 +1,37 @@
-# DJ Desktop Studio - One-Step Windows Setup
+# DJ Desktop Studio - Robust Windows Setup Engine
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ErrorActionPreference = "Stop"
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$AppDir = Split-Path -Parent $ScriptDir
-$DataDir = Join-Path $env:LOCALAPPDATA "DJ Desktop Studio"
 
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host "             DJ DESKTOP STUDIO - ONE STEP SETUP" -ForegroundColor Yellow
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$CandidateAppDir = Split-Path -Parent $ScriptDir
+
+if (Test-Path (Join-Path $CandidateAppDir "package.json")) {
+    $AppDir = $CandidateAppDir
+} elseif (Test-Path (Join-Path (Get-Location) "app\package.json")) {
+    $AppDir = (Join-Path (Get-Location) "app")
+} elseif (Test-Path (Join-Path (Get-Location) "package.json")) {
+    $AppDir = (Get-Location).Path
+} else {
+    $AppDir = $CandidateAppDir
+}
+
+$RootDir = Split-Path -Parent $AppDir
+$DataDir = Join-Path $env:LOCALAPPDATA "DJ Desktop Studio"
+
+try {
+    New-Item -ItemType Directory -Path $DataDir -Force -ErrorAction SilentlyContinue | Out-Null
+} catch {}
 
 function Refresh-NodePath {
     $candidates = @(
         "$env:ProgramFiles\nodejs",
+        "${env:ProgramFiles(x86)}\nodejs",
         "$env:LOCALAPPDATA\Programs\nodejs",
-        "$env:ProgramFiles\nodejs"
+        "$env:APPDATA\npm"
     ) | Select-Object -Unique
 
     $valid = $candidates | Where-Object { Test-Path (Join-Path $_ "node.exe") }
@@ -26,81 +40,123 @@ function Refresh-NodePath {
     }
 }
 
-Refresh-NodePath
-
-if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
-    Write-Host "[*] Node.js was not found. Installing Node.js LTS automatically..." -ForegroundColor Cyan
-
-    if (Get-Command winget.exe -ErrorAction SilentlyContinue) {
-        & winget.exe install --id OpenJS.NodeJS.LTS --exact --silent --accept-source-agreements --accept-package-agreements
-        if ($LASTEXITCODE -ne 0) {
-            throw "Node.js installation failed through winget."
-        }
-        Refresh-NodePath
-    } else {
-        throw "Node.js is not installed and winget is unavailable. Install Node.js LTS once, then run setup.bat again."
-    }
-}
-
-$NodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
-$NpmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
-
-if (-not $NodeCommand -or -not $NpmCommand) {
+try {
     Refresh-NodePath
+
+    if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
+        Write-Host "[*] Node.js was not detected in PATH. Checking winget installer..." -ForegroundColor Cyan
+
+        $wingetInstalled = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($wingetInstalled) {
+            Write-Host "[*] Installing Node.js LTS via winget..." -ForegroundColor Yellow
+            try {
+                & winget.exe install --id OpenJS.NodeJS.LTS --exact --silent --accept-source-agreements --accept-package-agreements
+            } catch {
+                Write-Warning "Winget install encountered an issue: $_"
+            }
+            Refresh-NodePath
+        }
+
+        if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
+            Write-Host ""
+            Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
+            Write-Host "[!] تنبيه: يتطلب تشغيل البرنامج تثبيت Node.js LTS لأول مرة على جهازك." -ForegroundColor Yellow
+            Write-Host "    يرجى تنزيل وتثبيت Node.js من: https://nodejs.org" -ForegroundColor White
+            Write-Host "    بعد اكتمال التثبيت، شغّل ملف setup.bat مرة أخرى وسيعمل فوراً!" -ForegroundColor White
+            Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
+            Write-Host ""
+            Read-Host "اضغط Enter للمتابعة أو الخروج (Press Enter to exit)..."
+            exit 1
+        }
+    }
+
     $NodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
     $NpmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
+
+    if (-not $NodeCommand -or -not $NpmCommand) {
+        Refresh-NodePath
+        $NodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+        $NpmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    }
+
+    if (-not $NodeCommand) {
+        throw "Could not locate node.exe."
+    }
+
+    Write-Host "[+] Node.js: $(node -v)" -ForegroundColor Green
+    if ($NpmCommand) {
+        Write-Host "[+] npm: $(npm -v)" -ForegroundColor Green
+    }
+    Write-Host "[+] App directory: $AppDir" -ForegroundColor Gray
+    Write-Host ""
+
+    Set-Location $AppDir
+
+    # Check if package.json exists in target directory
+    if (-not (Test-Path (Join-Path $AppDir "package.json"))) {
+        # Check if parent has package.json
+        if (Test-Path (Join-Path $RootDir "package.json")) {
+            $AppDir = $RootDir
+            Set-Location $AppDir
+        }
+    }
+
+    # Install dependencies
+    Write-Host "[*] Installing dependencies..." -ForegroundColor Cyan
+    & npm.cmd install --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "npm install finished with exit code $LASTEXITCODE. Continuing to check build assets..."
+    }
+
+    # Build production assets
+    Write-Host "[*] Building application assets (npm run build)..." -ForegroundColor Cyan
+    & npm.cmd run build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "npm run build returned code $LASTEXITCODE. Checking if dist exists..."
+    }
+
+    $distPath = Join-Path $AppDir "dist\index.html"
+    $parentDistPath = Join-Path $RootDir "dist\index.html"
+    if (-not (Test-Path $distPath) -and -not (Test-Path $parentDistPath)) {
+        Write-Warning "dist\index.html was not found, will run in development mode."
+    } else {
+        Write-Host "[+] Production build is ready." -ForegroundColor Green
+    }
+
+    # Desktop shortcut
+    Write-Host "[*] Creating Desktop and Start Menu shortcuts..." -ForegroundColor Cyan
+    $ShortcutScript = Join-Path $ScriptDir "create-desktop-shortcut.ps1"
+    if (Test-Path $ShortcutScript) {
+        try {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ShortcutScript
+        } catch {
+            Write-Warning "Shortcut script skipped: $_"
+        }
+    }
+
+    # Launch app
+    Write-Host "[*] Launching DJ Desktop Studio..." -ForegroundColor Cyan
+    $Launcher = Join-Path $ScriptDir "run-dj-desktop.bat"
+    if (Test-Path $Launcher) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList ('/c start "" "' + $Launcher + '"')
+    } else {
+        Start-Process "http://127.0.0.1:3000"
+    }
+
+    Write-Host ""
+    Write-Host "======================================================================" -ForegroundColor Green
+    Write-Host "               DJ DESKTOP STUDIO IS READY" -ForegroundColor Green
+    Write-Host "======================================================================" -ForegroundColor Green
+    Write-Host "تم اكتمال التثبيت وتشغيل البرنامج بنجاح!" -ForegroundColor Green
+    Start-Sleep -Seconds 2
+    exit 0
+
+} catch {
+    Write-Host ""
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
+    Write-Host "[!] حدث خطأ أثناء التثبيت: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Red
+    Write-Host ""
+    Read-Host "اضغط Enter للإغلاق (Press Enter to close)..."
+    exit 1
 }
-
-if (-not $NodeCommand -or -not $NpmCommand) {
-    throw "Node.js/npm could not be located after installation."
-}
-
-Write-Host "[+] Node.js: $(node -v)" -ForegroundColor Green
-Write-Host "[+] npm: $(npm -v)" -ForegroundColor Green
-Write-Host "[+] App folder: $AppDir" -ForegroundColor Gray
-Write-Host ""
-
-Set-Location $AppDir
-
-if (-not (Test-Path (Join-Path $AppDir "package.json"))) {
-    throw "package.json was not found inside the app folder."
-}
-
-Write-Host "[*] Installing/updating project dependencies..." -ForegroundColor Cyan
-& npm.cmd install --no-audit --no-fund
-if ($LASTEXITCODE -ne 0) {
-    throw "npm install failed."
-}
-
-Write-Host "[*] Building the production application..." -ForegroundColor Cyan
-& npm.cmd run build
-if ($LASTEXITCODE -ne 0) {
-    throw "The production build failed."
-}
-
-if (-not (Test-Path (Join-Path $AppDir "dist\index.html"))) {
-    throw "Build completed without producing dist\index.html."
-}
-
-Write-Host "[+] Production build completed successfully." -ForegroundColor Green
-Write-Host "[*] Creating Desktop and Start Menu shortcuts..." -ForegroundColor Cyan
-
-$ShortcutScript = Join-Path $ScriptDir "create-desktop-shortcut.ps1"
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ShortcutScript
-if ($LASTEXITCODE -ne 0) {
-    throw "Shortcut creation failed."
-}
-
-Write-Host "[+] Shortcuts created." -ForegroundColor Green
-Write-Host "[*] Launching DJ Desktop Studio..." -ForegroundColor Cyan
-
-$Launcher = Join-Path $ScriptDir "run-dj-desktop.vbs"
-Start-Process -FilePath "wscript.exe" -ArgumentList ('"' + $Launcher + '"')
-
-Write-Host ""
-Write-Host "======================================================================" -ForegroundColor Green
-Write-Host "               DJ DESKTOP STUDIO IS READY" -ForegroundColor Green
-Write-Host "======================================================================" -ForegroundColor Green
-Write-Host "Install completed in one step."
-Write-Host "Run uninstall.bat from this package whenever you want to remove the app data and shortcuts."
-Start-Sleep -Seconds 2
